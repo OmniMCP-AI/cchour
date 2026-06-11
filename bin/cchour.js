@@ -391,19 +391,14 @@ function collect(contentCategorize) {
   return { data, catOverride };
 }
 
-function fmtH(sec) {
-  const h = sec / 3600;
-  if (h >= 1) return `${h.toFixed(1)} 小时`;
-  return `${Math.round(sec / 60)} 分钟`;
-}
-
 function buildReport(data, categorize, catOverride, ndays, range = {}) {
   const toolSeconds = new Map();
   const toolDaily = new Map();
   const toolWeekly = new Map();
   const toolMonthly = new Map();
   const toolHourly = new Map();
-  const projRows = []; // {tool, proj, sec, cat, first, last}
+  const toolDayHour = new Map(); // tool -> Map("YYYY-MM-DD|H" -> sec)，供报表内按范围重算 24 小时分布
+  const projRows = []; // {tool, proj, sec, cat, first, last, daily}
   const catSeconds = new Map();
 
   for (const [tool, projects] of data) {
@@ -420,7 +415,7 @@ function buildReport(data, categorize, catOverride, ndays, range = {}) {
         if (t < first) first = t;
         if (t > last) last = t;
       }
-      projRows.push({ tool, proj, sec, cat, first, last });
+      projRows.push({ tool, proj, sec, cat, first, last, daily: dailyActive(ts) });
       for (const t of ts) allTs.push(t);
     }
     toolSeconds.set(tool, activeSeconds(allTs));
@@ -428,34 +423,14 @@ function buildReport(data, categorize, catOverride, ndays, range = {}) {
     toolWeekly.set(tool, weeklyActive(allTs));
     toolMonthly.set(tool, monthlyActive(allTs));
     toolHourly.set(tool, hourlyActive(allTs));
+    toolDayHour.set(tool, bucketActive(allTs, (t) => `${dayKey(t)}|${new Date(t * 1000).getHours()}`));
   }
 
   projRows.sort((a, b) => b.sec - a.sec);
 
-  // 图表锚点：--until 给定且早于今天时，以 until 为最后一格
-  const now = new Date();
-  const end = range.until && range.until < now ? range.until : now;
-  const days = [];
-  for (let i = ndays - 1; i >= 0; i--) {
-    const d = new Date(end.getFullYear(), end.getMonth(), end.getDate() - i);
-    if (range.since && d < range.since) continue;
-    days.push(`${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`);
-  }
-
-  // 最近 12 周（周一为起点）与最近 12 个月
-  const weeks = [];
-  for (let i = 11; i >= 0; i--) {
-    weeks.push(weekKey(end.getTime() / 1000 - i * 7 * 86400));
-  }
-  const months = [];
-  for (let i = 11; i >= 0; i--) {
-    const d = new Date(end.getFullYear(), end.getMonth() - i, 1);
-    months.push(`${d.getFullYear()}-${pad2(d.getMonth() + 1)}`);
-  }
-
   return {
-    toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourly,
-    projRows, catSeconds, days, weeks, months,
+    toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourly, toolDayHour,
+    projRows, catSeconds, daysOpt: ndays,
     range: {
       since: range.since ? dayKey(range.since.getTime() / 1000) : null,
       until: range.until ? dayKey(range.until.getTime() / 1000) : null,
@@ -463,115 +438,50 @@ function buildReport(data, categorize, catOverride, ndays, range = {}) {
   };
 }
 
-const TOOL_COLORS = { 'Claude Code': '#D97757', Codex: '#4A7DBE' };
-const CAT_COLORS = ['#D97757', '#4A7DBE', '#5BA88B', '#C9A227', '#9B7BB8', '#D86F8C', '#8A9BA8'];
-
-function stackedBars(keys, tools, byTool, color, labelFn, height) {
-  let max = 1;
-  for (const k of keys) {
-    const v = tools.reduce((a, t) => a + (byTool.get(t).get(k) || 0), 0);
-    if (v > max) max = v;
-  }
-  let bars = '';
-  for (const k of keys) {
-    let segs = '';
-    let total = 0;
-    for (const t of tools) {
-      const v = byTool.get(t).get(k) || 0;
-      total += v;
-      const h = (v / max) * height;
-      if (h > 0.5) segs += `<div class="seg" style="height:${h.toFixed(1)}px;background:${color(t)}"></div>`;
+// 报表内嵌数据：每工具按日 / 按日×小时，每项目按日（工作分类由前端按项目行聚合得出），
+// 页面里切换时间范围时就地重算所有数字。秒数取整以减小体积。
+// 语义：按「日桶归属」求和（增量记到后一事件所在天），选「全部」与 CLI 总数完全一致，
+// 子范围与 CLI --since/--until 仅在跨午夜的会话边界处有分钟级差异。
+function buildEmbedData({ toolSeconds, toolDaily, toolDayHour, projRows, range, daysOpt }) {
+  const round = (m) => {
+    const o = {};
+    for (const [k, v] of Array.from(m.entries()).sort()) o[k] = Math.round(v);
+    return o;
+  };
+  const tools = {};
+  let minDay = null;
+  for (const t of Array.from(toolSeconds.keys()).sort((a, b) => toolSeconds.get(b) - toolSeconds.get(a))) {
+    const daily = round(toolDaily.get(t));
+    for (const k in daily) if (!minDay || k < minDay) minDay = k;
+    const dayHour = {};
+    for (const [k, v] of toolDayHour.get(t)) {
+      const [d, h] = k.split('|');
+      if (!dayHour[d]) dayHour[d] = new Array(24).fill(0);
+      dayHour[d][+h] += Math.round(v);
     }
-    const tip = `${k} · ${(total / 3600).toFixed(1)}h`;
-    bars += `<div class="bar" title="${tip}"><div class="bar-stack">${segs}</div><div class="bar-x">${labelFn(k)}</div></div>`;
+    tools[t] = { daily, dayHour };
   }
-  return bars;
+  const now = new Date();
+  const genDay = dayKey(now.getTime() / 1000);
+  return {
+    genDay,
+    genTime: `${genDay} ${pad2(now.getHours())}:${pad2(now.getMinutes())}`,
+    minDay: minDay || genDay,
+    daysOpt,
+    range,
+    tools,
+    projects: projRows.map((r) => ({ tool: r.tool, proj: r.proj, cat: r.cat, daily: round(r.daily) })),
+  };
 }
 
-function renderHtml({
-  toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourly,
-  projRows, catSeconds, days, weeks, months, range,
-}) {
-  const total = Array.from(toolSeconds.values()).reduce((a, b) => a + b, 0);
-  const tools = Array.from(toolSeconds.keys()).sort((a, b) => toolSeconds.get(b) - toolSeconds.get(a));
-  const now = new Date();
-  const genTime = `${dayKey(now.getTime() / 1000)} ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
-
-  const firstTs = projRows.length ? Math.min(...projRows.map((r) => r.first)) : 0;
-  const spanDays = firstTs ? Math.max(1, Math.floor((Date.now() / 1000 - firstTs) / 86400)) : 1;
-  const color = (t) => TOOL_COLORS[t] || '#888';
-
-  // ---- 总览卡片 ----
-  let cards = `
-    <div class="card"><div class="card-label">总活跃时长</div>
-      <div class="card-value">${(total / 3600).toFixed(0)}<span class="unit">小时</span></div>
-      <div class="card-sub">自 ${firstTs ? dayKey(firstTs) : '—'} 起，${spanDays} 天</div></div>`;
-  for (const t of tools) {
-    const pct = total ? (toolSeconds.get(t) / total) * 100 : 0;
-    cards += `
-    <div class="card"><div class="card-label"><span class="dot" style="background:${color(t)}"></span>${t}</div>
-      <div class="card-value">${(toolSeconds.get(t) / 3600).toFixed(0)}<span class="unit">小时</span></div>
-      <div class="card-sub">占比 ${pct.toFixed(0)}% · 日均 ${(toolSeconds.get(t) / 3600 / spanDays).toFixed(1)} 小时</div></div>`;
-  }
-
-  // ---- 每日 / 每周 / 每月堆叠柱状图 ----
-  const bars = stackedBars(days, tools, toolDaily, color, (d) => d.slice(5).replace('-', '/'), 160);
-  const weekBars = stackedBars(weeks, tools, toolWeekly, color, (w) => w.slice(5).replace('-', '/'), 150);
-  const monthBars = stackedBars(months, tools, toolMonthly, color, (m) => m.slice(2).replace('-', '/'), 150);
-
-  const legend = tools
-    .map((t) => `<span class="lg"><span class="dot" style="background:${color(t)}"></span>${t}</span>`)
-    .join('');
-
-  // ---- 24 小时分布 ----
-  const hourTotal = [];
-  let maxHour = 1;
-  for (let h = 0; h < 24; h++) {
-    const v = tools.reduce((a, t) => a + (toolHourly.get(t).get(h) || 0), 0);
-    hourTotal.push(v);
-    if (v > maxHour) maxHour = v;
-  }
-  let hourBars = '';
-  for (let h = 0; h < 24; h++) {
-    let segs = '';
-    for (const t of tools) {
-      const v = toolHourly.get(t).get(h) || 0;
-      const hh = (v / maxHour) * 120;
-      if (hh > 0.5) segs += `<div class="seg" style="height:${hh.toFixed(1)}px;background:${color(t)}"></div>`;
-    }
-    hourBars += `<div class="bar" title="${pad2(h)}:00 · ${(hourTotal[h] / 3600).toFixed(1)}h"><div class="bar-stack">${segs}</div><div class="bar-x">${h}</div></div>`;
-  }
-
-  // ---- 工作分类 ----
-  const cats = Array.from(catSeconds.entries()).sort((a, b) => b[1] - a[1]);
-  const catTotal = cats.reduce((a, [, v]) => a + v, 0) || 1;
-  let catRows = '';
-  cats.forEach(([cat, sec], i) => {
-    const pct = (sec / catTotal) * 100;
-    const c = CAT_COLORS[i % CAT_COLORS.length];
-    catRows += `
-      <div class="hrow">
-        <div class="hname"><span class="dot" style="background:${c}"></span>${cat}</div>
-        <div class="htrack"><div class="hfill" style="width:${pct.toFixed(1)}%;background:${c}"></div></div>
-        <div class="hval">${fmtH(sec)} · ${pct.toFixed(0)}%</div>
-      </div>`;
-  });
-
-  // ---- Top 项目 ----
-  const top = projRows.slice(0, 20);
-  const maxProj = top.length ? top[0].sec : 1;
-  let projHtml = '';
-  for (const r of top) {
-    const pct = (r.sec / maxProj) * 100;
-    const last = new Date(r.last * 1000);
-    const lastS = `${pad2(last.getMonth() + 1)}-${pad2(last.getDate())}`;
-    projHtml += `
-      <div class="hrow">
-        <div class="hname" title="${r.proj}">${r.proj}</div>
-        <div class="htrack"><div class="hfill" style="width:${pct.toFixed(1)}%;background:${color(r.tool)}"></div></div>
-        <div class="hval">${fmtH(r.sec)} <span class="muted">· ${r.cat} · 最近 ${lastS}</span></div>
-      </div>`;
-  }
+function renderHtml(report) {
+  const embed = buildEmbedData(report);
+  // </script> 防注入：JSON 里的 < 转义后再嵌入
+  const json = JSON.stringify(embed).replace(/</g, '\\u003c');
+  const r = report.range;
+  const clipNote = r && (r.since || r.until)
+    ? ` · 数据已按命令行参数截取 ${r.since || '最早'} ~ ${r.until || '今天'}`
+    : '';
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -613,51 +523,300 @@ function renderHtml({
   .hfill { height:100%; border-radius:7px; }
   .hval { width:230px; font-size:12px; text-align:right; flex-shrink:0; }
   .muted { color:var(--muted); }
+  .controls { margin-top:18px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .chip { border:1px solid var(--line); background:var(--card); border-radius:16px; padding:5px 13px;
+          font-size:13px; color:var(--ink); cursor:pointer; font-family:inherit; }
+  .chip:hover { border-color:#c5c5c0; }
+  .chip.active { background:var(--ink); color:#fff; border-color:var(--ink); }
+  .custom { font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; margin-left:6px; }
+  .custom input { border:1px solid var(--line); border-radius:8px; padding:4px 8px; font-size:13px;
+                  color:var(--ink); background:var(--card); font-family:inherit; }
   footer { margin-top:48px; font-size:12px; color:var(--muted); text-align:center; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>AI 编程工具时间报表</h1>
-  <div class="sub">生成于 ${genTime}${range && (range.since || range.until) ? ` · 统计范围 ${range.since || '最早'} ~ ${range.until || '今天'}` : ''} · 数据来自本机 Claude Code 与 Codex 会话记录 · 活跃时长 = 相邻操作间隔 ≤ 15 分钟的累计</div>
+  <div class="sub">生成于 ${embed.genTime} · <span id="range-label"></span>${clipNote} · 数据来自本机 Claude Code 与 Codex 会话记录 · 活跃时长 = 相邻操作间隔 ≤ 15 分钟的累计</div>
 
-  <div class="cards">${cards}
+  <div class="controls">
+    <button class="chip" data-preset="all">全部</button>
+    <button class="chip" data-preset="today">今天</button>
+    <button class="chip" data-preset="week">本周</button>
+    <button class="chip" data-preset="lastweek">上周</button>
+    <button class="chip" data-preset="month">本月</button>
+    <button class="chip" data-preset="lastmonth">上月</button>
+    <button class="chip" data-preset="d7">近 7 天</button>
+    <button class="chip" data-preset="d30">近 30 天</button>
+    <button class="chip" data-preset="d90">近 90 天</button>
+    <span class="custom">自定义 <input type="date" id="d-since"> ~ <input type="date" id="d-until"></span>
   </div>
 
-  <h2>最近 ${days.length} 天每日使用</h2>
+  <div class="cards" id="cards"></div>
+
+  <h2 id="h-daily"></h2>
   <div class="panel">
-    <div class="chart">${bars}</div>
-    <div class="legend">${legend}</div>
+    <div class="chart" id="chart-daily"></div>
+    <div class="legend" id="legend-daily"></div>
   </div>
 
-  <h2>最近 ${weeks.length} 周每周使用（以周一为起点）</h2>
+  <h2 id="h-weekly"></h2>
   <div class="panel">
-    <div class="chart" style="height:180px">${weekBars}</div>
-    <div class="legend">${legend}</div>
+    <div class="chart" id="chart-weekly" style="height:180px"></div>
+    <div class="legend" id="legend-weekly"></div>
   </div>
 
-  <h2>最近 ${months.length} 个月每月使用</h2>
+  <h2 id="h-monthly"></h2>
   <div class="panel">
-    <div class="chart" style="height:180px">${monthBars}</div>
-    <div class="legend">${legend}</div>
+    <div class="chart" id="chart-monthly" style="height:180px"></div>
+    <div class="legend" id="legend-monthly"></div>
   </div>
 
   <h2>一天中的时间分布（24 小时）</h2>
   <div class="panel hourchart">
-    <div class="chart" style="height:150px">${hourBars}</div>
-    <div class="legend">${legend}</div>
+    <div class="chart" id="chart-hourly" style="height:150px"></div>
+    <div class="legend" id="legend-hourly"></div>
   </div>
 
   <h2>工作分类</h2>
-  <div class="panel">${catRows}
-  </div>
+  <div class="panel" id="cats"></div>
 
   <h2>项目时长 Top 20</h2>
-  <div class="panel">${projHtml}
-  </div>
+  <div class="panel" id="projects"></div>
 
-  <footer>cchour · 全部数据在本机统计，未上传任何服务</footer>
+  <footer>cchour · 全部数据在本机统计，未上传任何服务 · 时间范围切换在浏览器内完成</footer>
 </div>
+
+<script type="application/json" id="cchour-data">${json}</script>
+<script>
+'use strict';
+/* 范围切换全部在前端完成：按「日桶归属」对内嵌的按日数据求和。 */
+var D = JSON.parse(document.getElementById('cchour-data').textContent);
+var TOOL_COLORS = { 'Claude Code': '#D97757', 'Codex': '#4A7DBE' };
+var CAT_COLORS = ['#D97757', '#4A7DBE', '#5BA88B', '#C9A227', '#9B7BB8', '#D86F8C', '#8A9BA8'];
+var TOOLS = Object.keys(D.tools);
+
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+function hrs(sec) { var h = sec / 3600; return h >= 100 ? h.toFixed(0) : h.toFixed(1); }
+function fmtH(sec) { var h = sec / 3600; return h >= 1 ? h.toFixed(1) + ' 小时' : Math.round(sec / 60) + ' 分钟'; }
+function color(t) { return TOOL_COLORS[t] || '#888'; }
+function dayStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+function parseDay(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+function mondayOf(d) { return addDays(d, -((d.getDay() + 6) % 7)); }
+function inR(k, lo, hi) { return (!lo || k >= lo) && (!hi || k <= hi); }
+function sumRange(daily, lo, hi) { var s = 0; for (var k in daily) if (inR(k, lo, hi)) s += daily[k]; return s; }
+
+var cur = { since: null, until: null };
+
+function stackedBars(keys, tools, valFn, labelFn, height) {
+  var max = 1, totals = [], i, t, v;
+  for (i = 0; i < keys.length; i++) {
+    v = 0;
+    for (t = 0; t < tools.length; t++) v += valFn(tools[t], keys[i]);
+    totals.push(v);
+    if (v > max) max = v;
+  }
+  var html = '';
+  for (i = 0; i < keys.length; i++) {
+    var segs = '';
+    for (t = 0; t < tools.length; t++) {
+      v = valFn(tools[t], keys[i]);
+      var h = (v / max) * height;
+      if (h > 0.5) segs += '<div class="seg" style="height:' + h.toFixed(1) + 'px;background:' + color(tools[t]) + '"></div>';
+    }
+    html += '<div class="bar" title="' + keys[i] + ' · ' + (totals[i] / 3600).toFixed(1) + 'h">' +
+      '<div class="bar-stack">' + segs + '</div><div class="bar-x">' + labelFn(keys[i]) + '</div></div>';
+  }
+  return html;
+}
+
+function render() {
+  var lo = cur.since, hi = cur.until, i;
+  var toolSec = {}, total = 0;
+  TOOLS.forEach(function (t) { toolSec[t] = sumRange(D.tools[t].daily, lo, hi); total += toolSec[t]; });
+  var tools = TOOLS.slice().sort(function (a, b) { return toolSec[b] - toolSec[a]; });
+
+  var start = lo && lo > D.minDay ? lo : D.minDay;
+  var end = hi && hi < D.genDay ? hi : D.genDay;
+  if (end < start) end = start;
+  var spanDays = Math.max(1, Math.round((parseDay(end) - parseDay(start)) / 86400000) + 1);
+
+  document.getElementById('range-label').textContent =
+    (lo || hi) ? '统计范围 ' + (lo || '最早') + ' ~ ' + (hi || '今天') : '统计范围 全部数据';
+
+  // 总览卡片
+  var cards = '<div class="card"><div class="card-label">总活跃时长</div>' +
+    '<div class="card-value">' + hrs(total) + '<span class="unit">小时</span></div>' +
+    '<div class="card-sub">' + start + ' ~ ' + end + ' · ' + spanDays + ' 天</div></div>';
+  tools.forEach(function (t) {
+    var pct = total ? (toolSec[t] / total) * 100 : 0;
+    cards += '<div class="card"><div class="card-label"><span class="dot" style="background:' + color(t) + '"></span>' + t + '</div>' +
+      '<div class="card-value">' + hrs(toolSec[t]) + '<span class="unit">小时</span></div>' +
+      '<div class="card-sub">占比 ' + pct.toFixed(0) + '% · 日均 ' + (toolSec[t] / 3600 / spanDays).toFixed(1) + ' 小时</div></div>';
+  });
+  document.getElementById('cards').innerHTML = cards;
+
+  var legend = tools.map(function (t) {
+    return '<span class="lg"><span class="dot" style="background:' + color(t) + '"></span>' + t + '</span>';
+  }).join('');
+  ['legend-daily', 'legend-weekly', 'legend-monthly', 'legend-hourly'].forEach(function (id) {
+    document.getElementById(id).innerHTML = legend;
+  });
+
+  // 每日图：锚定范围末尾，最多 daysOpt 根
+  var endD = parseDay(end);
+  var days = [];
+  for (i = D.daysOpt - 1; i >= 0; i--) {
+    var ds = dayStr(addDays(endD, -i));
+    if (ds < start) continue;
+    days.push(ds);
+  }
+  document.getElementById('h-daily').textContent = '最近 ' + days.length + ' 天每日使用';
+  document.getElementById('chart-daily').innerHTML = stackedBars(days, tools, function (t, k) {
+    return D.tools[t].daily[k] || 0;
+  }, function (k) { return k.slice(5).replace('-', '/'); }, 160);
+
+  // 周 / 月聚合（只含范围内的天）
+  var wkByTool = {}, moByTool = {};
+  tools.forEach(function (t) {
+    var w = {}, m = {}, daily = D.tools[t].daily, k;
+    for (k in daily) {
+      if (!inR(k, lo, hi)) continue;
+      var wk = dayStr(mondayOf(parseDay(k)));
+      w[wk] = (w[wk] || 0) + daily[k];
+      var mk = k.slice(0, 7);
+      m[mk] = (m[mk] || 0) + daily[k];
+    }
+    wkByTool[t] = w;
+    moByTool[t] = m;
+  });
+  var weeks = [], endWeek = mondayOf(endD), startWeek = dayStr(mondayOf(parseDay(start)));
+  for (i = 11; i >= 0; i--) {
+    var wkk = dayStr(addDays(endWeek, -7 * i));
+    if (wkk < startWeek) continue;
+    weeks.push(wkk);
+  }
+  document.getElementById('h-weekly').textContent = '最近 ' + weeks.length + ' 周每周使用（以周一为起点）';
+  document.getElementById('chart-weekly').innerHTML = stackedBars(weeks, tools, function (t, k) {
+    return wkByTool[t][k] || 0;
+  }, function (k) { return k.slice(5).replace('-', '/'); }, 150);
+
+  var months = [], startMonth = start.slice(0, 7);
+  for (i = 11; i >= 0; i--) {
+    var md = new Date(endD.getFullYear(), endD.getMonth() - i, 1);
+    var mk2 = md.getFullYear() + '-' + pad2(md.getMonth() + 1);
+    if (mk2 < startMonth) continue;
+    months.push(mk2);
+  }
+  document.getElementById('h-monthly').textContent = '最近 ' + months.length + ' 个月每月使用';
+  document.getElementById('chart-monthly').innerHTML = stackedBars(months, tools, function (t, k) {
+    return moByTool[t][k] || 0;
+  }, function (k) { return k.slice(2).replace('-', '/'); }, 150);
+
+  // 24 小时分布
+  var hourByTool = {};
+  tools.forEach(function (t) {
+    var arr = [], j;
+    for (j = 0; j < 24; j++) arr.push(0);
+    var dh = D.tools[t].dayHour, k;
+    for (k in dh) {
+      if (!inR(k, lo, hi)) continue;
+      for (j = 0; j < 24; j++) arr[j] += dh[k][j];
+    }
+    hourByTool[t] = arr;
+  });
+  var hourKeys = [];
+  for (i = 0; i < 24; i++) hourKeys.push(i);
+  document.getElementById('chart-hourly').innerHTML = stackedBars(hourKeys, tools, function (t, h) {
+    return hourByTool[t][h];
+  }, function (h) { return String(h); }, 120);
+
+  // 工作分类（由项目行聚合，口径与 CLI 一致：分类只含具体项目，不含工具并集差额）
+  var catSec = {};
+  D.projects.forEach(function (p) {
+    var s = sumRange(p.daily, lo, hi);
+    if (s > 0) catSec[p.cat] = (catSec[p.cat] || 0) + s;
+  });
+  var cats = Object.keys(catSec).sort(function (a, b) { return catSec[b] - catSec[a]; });
+  var catTotal = cats.reduce(function (a, c) { return a + catSec[c]; }, 0) || 1;
+  var catRows = '';
+  cats.forEach(function (c, idx) {
+    var pct = (catSec[c] / catTotal) * 100;
+    var col = CAT_COLORS[idx % CAT_COLORS.length];
+    catRows += '<div class="hrow"><div class="hname"><span class="dot" style="background:' + col + '"></span>' + c + '</div>' +
+      '<div class="htrack"><div class="hfill" style="width:' + pct.toFixed(1) + '%;background:' + col + '"></div></div>' +
+      '<div class="hval">' + fmtH(catSec[c]) + ' · ' + pct.toFixed(0) + '%</div></div>';
+  });
+  document.getElementById('cats').innerHTML = catRows || '<div class="muted" style="font-size:13px">该时间段没有数据</div>';
+
+  // Top 项目
+  var rows = [];
+  D.projects.forEach(function (p) {
+    var s = sumRange(p.daily, lo, hi);
+    if (s <= 0) return;
+    var lastDay = null, k;
+    for (k in p.daily) if (inR(k, lo, hi) && (!lastDay || k > lastDay)) lastDay = k;
+    rows.push({ proj: p.proj, tool: p.tool, cat: p.cat, sec: s, last: lastDay });
+  });
+  rows.sort(function (a, b) { return b.sec - a.sec; });
+  var top = rows.slice(0, 20);
+  var maxProj = top.length ? top[0].sec : 1;
+  var projHtml = '';
+  top.forEach(function (r) {
+    var pct = (r.sec / maxProj) * 100;
+    projHtml += '<div class="hrow"><div class="hname" title="' + r.proj + '">' + r.proj + '</div>' +
+      '<div class="htrack"><div class="hfill" style="width:' + pct.toFixed(1) + '%;background:' + color(r.tool) + '"></div></div>' +
+      '<div class="hval">' + fmtH(r.sec) + ' <span class="muted">· ' + r.cat + ' · 最近 ' + r.last.slice(5) + '</span></div></div>';
+  });
+  document.getElementById('projects').innerHTML = projHtml || '<div class="muted" style="font-size:13px">该时间段没有数据</div>';
+}
+
+function presetRange(name) {
+  var t = new Date();
+  var today = dayStr(t);
+  var mon = mondayOf(t);
+  if (name === 'today') return [today, today];
+  if (name === 'week') return [dayStr(mon), today];
+  if (name === 'lastweek') { var lm = addDays(mon, -7); return [dayStr(lm), dayStr(addDays(lm, 6))]; }
+  if (name === 'month') return [today.slice(0, 8) + '01', today];
+  if (name === 'lastmonth') {
+    return [dayStr(new Date(t.getFullYear(), t.getMonth() - 1, 1)), dayStr(new Date(t.getFullYear(), t.getMonth(), 0))];
+  }
+  if (name === 'd7') return [dayStr(addDays(t, -6)), today];
+  if (name === 'd30') return [dayStr(addDays(t, -29)), today];
+  if (name === 'd90') return [dayStr(addDays(t, -89)), today];
+  return [null, null]; // all
+}
+
+function setRange(since, until, activeChip) {
+  cur.since = since;
+  cur.until = until;
+  document.querySelectorAll('.chip').forEach(function (c) { c.classList.remove('active'); });
+  if (activeChip) activeChip.classList.add('active');
+  document.getElementById('d-since').value = since || '';
+  document.getElementById('d-until').value = until || '';
+  render();
+}
+
+document.querySelectorAll('.chip').forEach(function (c) {
+  c.addEventListener('click', function () {
+    var r = presetRange(c.dataset.preset);
+    setRange(r[0], r[1], c);
+  });
+});
+
+function onCustom() {
+  var s = document.getElementById('d-since').value || null;
+  var u = document.getElementById('d-until').value || null;
+  if (s && u && s > u) { var tmp = s; s = u; u = tmp; }
+  setRange(s, u, null);
+}
+document.getElementById('d-since').addEventListener('change', onCustom);
+document.getElementById('d-until').addEventListener('change', onCustom);
+
+setRange(null, null, document.querySelector('.chip[data-preset="all"]'));
+</script>
 </body>
 </html>`;
 }

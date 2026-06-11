@@ -1,16 +1,35 @@
 # STATE — cchour 项目状态
 
-## 当前状态（迭代 9 完成，2026-06-11）
+## 当前状态（迭代 10 完成，2026-06-11）
 
-Node.js 零依赖 CLI，**v1.6.0（本地，待 publish）**：
+Node.js 零依赖 CLI，**v1.7.0（本地，待 publish）**：
 
 - 代码：`bin/cchour.js`（单文件，零依赖，Node ≥ 18）
-- GitHub：https://github.com/jianshuo/cchour （public，main，已 push v1.6.0，b6be23c）
-- npm：**cchour@1.1.0 已发布**；1.2.0–1.6.0 均未发布——publish 卡 2FA，
-  需用户在项目目录跑 `npm publish --access public --otp=<验证码>`（直接发 1.6.0 即可）
-- 迭代 9 改动：`--week` / `--month` 周报月报快捷范围（详见下节）
+- GitHub：https://github.com/jianshuo/cchour （public，main）
+- npm：**cchour@1.1.0 已发布**；1.2.0–1.7.0 均未发布——publish 卡 2FA，
+  需用户在项目目录跑 `npm publish --access public --otp=<验证码>`（直接发 1.7.0 即可）
+- 迭代 10 改动：HTML 报表内交互式时间范围选择器（详见下节）
+- 迭代 9 改动：`--week` / `--month` 周报月报快捷范围
 - 迭代 8 改动：`--since` / `--until` 日期过滤
 - 迭代 7 改动：① `--json` 输出模式；② 内容级分类改为扫描前 3 条用户消息——杂项 **22% → 18%**
+
+## 报表内时间范围选择器（迭代 10 引入）
+
+- 报表顶部一排 chip：全部/今天/本周/上周/本月/上月/近7天/近30天/近90天 + 自定义两个
+  `<input type=date>`（反序自动交换）；切换后总览卡片、日/周/月图、24 小时分布、
+  工作分类、Top 20 项目全部在浏览器内就地重算重绘，无需重跑 CLI
+- 实现：renderHtml 改为「静态骨架 + 内嵌 JSON + 前端渲染」。buildEmbedData 嵌入
+  每工具 daily、每工具 dayHour（天→24 小时数组）、每项目 daily（含 tool/cat）；
+  分类条由前端按项目行聚合（口径与 CLI 一致）。嵌入 JSON 仅 ~16KB（秒数取整）
+- 语义：前端按「日桶归属」求和（bucketActive 把增量记到后一事件所在天）。
+  选「全部」与 CLI 总数**完全一致**；子范围与 CLI --since/--until 在跨午夜会话
+  边界处有分钟级差异（验证：上月完全一致，上周差 0.01h）
+- CLI 行为不变：--since/--until/--week/--month 仍在采集后过滤事件，此时报表只
+  嵌入过滤后的数据（头部提示「数据已按命令行参数截取」），选择器在其内细分；--json 不动
+- **坑**：前端脚本嵌在服务端模板字面量里，客户端 JS 不能用反引号和 `${`（会被服务端
+  模板吃掉），全部用字符串拼接；嵌入 JSON 的 `<` 转义成 `\u003c` 防 `</script>` 截断
+- 日图锚定所选范围末尾、最多 --days 根；周/月图最多 12 格、起点截断到范围；
+  小时图由 dayHour 按范围求和；周/月聚合直接由日桶按 weekKey/monthKey 折叠
 
 ## --week / --month（迭代 9 引入）
 
@@ -86,6 +105,10 @@ cchour --json | jq '.tools["Claude Code"].hours'
 
 - 迭代 2（GAP=300s）：Node 版与 Python 版对齐：186.9h / 11.6h
 - 迭代 3（GAP=900s）：228.1h / 13.9h
+- 迭代 10：无参数 229.65h / 13.94h；报表选「全部」与 CLI 完全一致；
+  浏览器点「上月」=133h/11.3h 对照 `--month last`（133.28/11.32）一致；
+  「上周」=66.1h 对照 `--week last`（66.14h，差 0.01h 为日桶边界语义）；
+  「今天」单日 8.6h；自定义日期反序自动交换；console 无错误；截图核对两种状态全部板块正常
 - 迭代 5：228.5h / 13.9h；杂项 48%→29%
 - 迭代 6：228.6h / 13.9h；杂项 29%→22%
 - 迭代 9：无参数 229.0h / 13.9h（与迭代 8 一致+当日新数据）；
@@ -103,8 +126,8 @@ cchour --json | jq '.tools["Claude Code"].hours'
 
 ## 下次迭代可做
 
-1. **npm publish 1.6.0（唯一卡点）**：用户在项目目录跑 `npm publish --access public --otp=<code>`，
-   再 `npx cchour@1.6.0 --version` 验证（1.2.0–1.5.0 从未发布，跳过即可）
+1. **npm publish 1.7.0（唯一卡点）**：用户在项目目录跑 `npm publish --access public --otp=<code>`，
+   再 `npx cchour@1.7.0 --version` 验证（1.2.0–1.6.0 从未发布，跳过即可）
 2. 剩余杂项 51.8h 已多为真杂项（"继续"、零散问答）；再降收益递减
 3. 其他工具（Gemini CLI / Copilot）目前本机无会话日志，等有数据再接
 4. 可加 launchd 定时刷新（数据在本地，无 iCloud 限制）；`--json` + `--week` 已为此铺路

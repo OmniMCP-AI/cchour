@@ -5,6 +5,11 @@ session logs of **Claude Code** and **Codex**, computes your active hours, and
 renders a self-contained HTML report — daily, weekly and monthly stacked bars,
 hour-of-day distribution, work categories, and top projects.
 
+The report has a built-in **time range picker** (all / today / this week / last
+week / this month / last month / last 7/30/90 days / custom dates): pick a
+period and every number, chart and ranking recomputes instantly in the browser —
+no need to re-run the CLI.
+
 Everything runs locally. Nothing is uploaded anywhere.
 
 ## Install
@@ -42,6 +47,17 @@ cchour --json -o out.json # ...or write it to a file
 computed, so totals, charts, categories and project rows all reflect the range.
 The HTML header shows the active range, and the JSON output carries `since` /
 `until` fields. Charts anchor their last bar at `--until` when it is in the past.
+
+### Interactive range picker (HTML report)
+
+The generated HTML embeds per-day data and recomputes everything client-side
+when you switch the range, so one report answers "this week vs last month"
+without regenerating. Selecting **全部 (all)** reproduces the CLI totals
+exactly; sub-ranges sum per-day buckets (a work session crossing midnight is
+attributed to the day each interval ends on), which can differ from an
+equivalent CLI `--since`/`--until` run by a few minutes at the boundaries.
+When the CLI is run with a date filter, the report only embeds the filtered
+data and the picker narrows within it.
 
 `--week` / `--month` are shortcuts that expand to the equivalent `--since` /
 `--until` pair (weeks start on Monday, ranges never extend past today), so
