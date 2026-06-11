@@ -397,7 +397,7 @@ function fmtH(sec) {
   return `${Math.round(sec / 60)} 分钟`;
 }
 
-function buildReport(data, categorize, catOverride, ndays) {
+function buildReport(data, categorize, catOverride, ndays, range = {}) {
   const toolSeconds = new Map();
   const toolDaily = new Map();
   const toolWeekly = new Map();
@@ -432,27 +432,34 @@ function buildReport(data, categorize, catOverride, ndays) {
 
   projRows.sort((a, b) => b.sec - a.sec);
 
-  const days = [];
+  // 图表锚点：--until 给定且早于今天时，以 until 为最后一格
   const now = new Date();
+  const end = range.until && range.until < now ? range.until : now;
+  const days = [];
   for (let i = ndays - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    const d = new Date(end.getFullYear(), end.getMonth(), end.getDate() - i);
+    if (range.since && d < range.since) continue;
     days.push(`${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`);
   }
 
   // 最近 12 周（周一为起点）与最近 12 个月
   const weeks = [];
   for (let i = 11; i >= 0; i--) {
-    weeks.push(weekKey(now.getTime() / 1000 - i * 7 * 86400));
+    weeks.push(weekKey(end.getTime() / 1000 - i * 7 * 86400));
   }
   const months = [];
   for (let i = 11; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d = new Date(end.getFullYear(), end.getMonth() - i, 1);
     months.push(`${d.getFullYear()}-${pad2(d.getMonth() + 1)}`);
   }
 
   return {
     toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourly,
     projRows, catSeconds, days, weeks, months,
+    range: {
+      since: range.since ? dayKey(range.since.getTime() / 1000) : null,
+      until: range.until ? dayKey(range.until.getTime() / 1000) : null,
+    },
   };
 }
 
@@ -483,7 +490,7 @@ function stackedBars(keys, tools, byTool, color, labelFn, height) {
 
 function renderHtml({
   toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourly,
-  projRows, catSeconds, days, weeks, months,
+  projRows, catSeconds, days, weeks, months, range,
 }) {
   const total = Array.from(toolSeconds.values()).reduce((a, b) => a + b, 0);
   const tools = Array.from(toolSeconds.keys()).sort((a, b) => toolSeconds.get(b) - toolSeconds.get(a));
@@ -612,7 +619,7 @@ function renderHtml({
 <body>
 <div class="wrap">
   <h1>AI 编程工具时间报表</h1>
-  <div class="sub">生成于 ${genTime} · 数据来自本机 Claude Code 与 Codex 会话记录 · 活跃时长 = 相邻操作间隔 ≤ 15 分钟的累计</div>
+  <div class="sub">生成于 ${genTime}${range && (range.since || range.until) ? ` · 统计范围 ${range.since || '最早'} ~ ${range.until || '今天'}` : ''} · 数据来自本机 Claude Code 与 Codex 会话记录 · 活跃时长 = 相邻操作间隔 ≤ 15 分钟的累计</div>
 
   <div class="cards">${cards}
   </div>
@@ -656,7 +663,7 @@ function renderHtml({
 }
 
 // --json 输出：报表数据序列化为 JSON，方便其他脚本消费
-function renderJson({ toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourly, projRows, catSeconds }) {
+function renderJson({ toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourly, projRows, catSeconds, range }) {
   const m2o = (m) => Object.fromEntries(Array.from(m.entries()).sort());
   const tools = {};
   for (const [t, sec] of toolSeconds) {
@@ -672,6 +679,8 @@ function renderJson({ toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourl
   return JSON.stringify({
     generatedAt: new Date().toISOString(),
     gapSeconds: GAP,
+    since: range ? range.since : null,
+    until: range ? range.until : null,
     totalSeconds: Array.from(toolSeconds.values()).reduce((a, b) => a + b, 0),
     tools,
     categories: m2o(catSeconds),
@@ -694,6 +703,8 @@ function printHelp() {
 选项:
   -o, --output <文件>   输出 HTML 路径（默认 ./cchour-report.html）
       --days <N>        每日图表显示最近 N 天（默认 30）
+      --since <日期>    只统计该日期（含）之后的活动，格式 YYYY-MM-DD
+      --until <日期>    只统计该日期（含当天整天）之前的活动，格式 YYYY-MM-DD
       --open            生成后用系统默认浏览器打开
       --json            输出 JSON 而非 HTML（默认打到 stdout，配 -o 则写文件）
   -h, --help            显示帮助
@@ -706,14 +717,31 @@ function printHelp() {
 匹配会话首条用户消息，命中则把该会话挪进对应分类。`);
 }
 
+function parseDayArg(name, s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
+  let d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+  // new Date 会把 2026-13-99 这类值自动进位，回验分量拦住
+  if (d && (d.getFullYear() !== +m[1] || d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[3])) d = null;
+  if (!d || isNaN(d.getTime())) {
+    console.error(`${name} 需要 YYYY-MM-DD 格式的日期，收到: ${s}`);
+    process.exit(1);
+  }
+  return d;
+}
+
 function parseArgs(argv) {
-  const opts = { output: 'cchour-report.html', outputSet: false, days: 30, open: false, json: false };
+  const opts = {
+    output: 'cchour-report.html', outputSet: false, days: 30, open: false, json: false,
+    since: null, until: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-o' || a === '--output') {
       opts.output = argv[++i];
       opts.outputSet = true;
     } else if (a === '--days') opts.days = Math.max(1, parseInt(argv[++i], 10) || 30);
+    else if (a === '--since') opts.since = parseDayArg('--since', argv[++i]);
+    else if (a === '--until') opts.until = parseDayArg('--until', argv[++i]);
     else if (a === '--open') opts.open = true;
     else if (a === '--json') opts.json = true;
     else if (a === '-h' || a === '--help') {
@@ -732,6 +760,10 @@ function parseArgs(argv) {
     console.error('缺少 --output 的值');
     process.exit(1);
   }
+  if (opts.since && opts.until && opts.since > opts.until) {
+    console.error('--since 不能晚于 --until');
+    process.exit(1);
+  }
   return opts;
 }
 
@@ -742,13 +774,29 @@ function main() {
   console.error('扫描数据源…');
   const rules = loadCategories();
   const { data, catOverride } = collect(makeContentCategorize(rules));
+
+  // --since/--until：按本地时区过滤事件，until 含当天整天
+  const lo = opts.since ? opts.since.getTime() / 1000 : -Infinity;
+  const hi = opts.until ? opts.until.getTime() / 1000 + 86400 : Infinity;
+  if (opts.since || opts.until) {
+    for (const projects of data.values()) {
+      for (const [proj, ts] of projects) {
+        const kept = ts.filter((t) => t >= lo && t < hi);
+        if (kept.length) projects.set(proj, kept);
+        else projects.delete(proj);
+      }
+    }
+  }
+
   for (const [tool, projects] of data) {
     let n = 0;
     for (const ts of projects.values()) n += ts.length;
     console.error(`  ${tool}: ${projects.size} 个项目, ${n} 个事件`);
   }
 
-  const report = buildReport(data, makeCategorize(rules), catOverride, opts.days);
+  const report = buildReport(data, makeCategorize(rules), catOverride, opts.days, {
+    since: opts.since, until: opts.until,
+  });
 
   const sorted = Array.from(report.toolSeconds.entries()).sort((a, b) => b[1] - a[1]);
   for (const [t, s] of sorted) console.error(`  ${t}: ${(s / 3600).toFixed(1)} 小时`);

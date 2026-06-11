@@ -1,5 +1,14 @@
 # TODO — cchour AI 编程工具时间报表
 
+# TODO 迭代 8（2026-06-11）— --since / --until 日期过滤
+
+- [x] 1. 确认 npm 发布状态：registry 仍是 1.1.0，publish 待用户 OTP（直接发最新版即可）
+- [x] 2. 实现 `--since YYYY-MM-DD` / `--until YYYY-MM-DD`：collect 后按本地时区过滤事件（until 含当天整天）；`--days` 继续控制日表窗口，与日期范围共存；无效日期（含 2026-13-99 这类 Date 自动进位值）和 since>until 都报错退出
+- [x] 3. HTML 头部显示「统计范围 X ~ Y」；`--json` 带 `since`/`until` 字段；日/周/月图表锚点改为 until（过去日期时）
+- [x] 4. 本地运行验证：无参数 228.9h/13.9h（与迭代 7 一致+当日新数据）；06-01~06-10 范围 90.4h，日表正好 10 根柱（06-01..06-10）；`--json` 经 JSON.parse 验证；截图核对渲染正常
+- [x] 5. 版本 bump 1.5.0，README 补 `--since`/`--until` 说明，commit + push
+- [x] 6. 更新 STATE.md / TODO.md
+
 # TODO 迭代 7（2026-06-11）— --json 输出 + 多消息内容分类
 
 - [x] 1. 确认 npm 发布状态：registry 仍是 1.1.0，publish 待用户 OTP（不可自主完成，留给用户，直接发 1.4.0）

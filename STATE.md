@@ -1,14 +1,26 @@
 # STATE — cchour 项目状态
 
-## 当前状态（迭代 7 完成，2026-06-11）
+## 当前状态（迭代 8 完成，2026-06-11）
 
-Node.js 零依赖 CLI，**v1.4.0（本地，待 publish）**：
+Node.js 零依赖 CLI，**v1.5.0（本地，待 publish）**：
 
 - 代码：`bin/cchour.js`（单文件，零依赖，Node ≥ 18）
-- GitHub：https://github.com/jianshuo/cchour （public，main，已 push v1.4.0）
-- npm：**cchour@1.1.0 已发布**；1.2.0–1.4.0 均未发布——publish 卡 2FA，
-  需用户在项目目录跑 `npm publish --access public --otp=<验证码>`（直接发 1.4.0 即可）
+- GitHub：https://github.com/jianshuo/cchour （public，main，已 push v1.5.0）
+- npm：**cchour@1.1.0 已发布**；1.2.0–1.5.0 均未发布——publish 卡 2FA，
+  需用户在项目目录跑 `npm publish --access public --otp=<验证码>`（直接发 1.5.0 即可）
+- 迭代 8 改动：`--since` / `--until` 日期过滤（详见下节）
 - 迭代 7 改动：① `--json` 输出模式；② 内容级分类改为扫描前 3 条用户消息——杂项 **22% → 18%**
+
+## --since / --until（迭代 8 引入）
+
+- `--since YYYY-MM-DD` / `--until YYYY-MM-DD`，本地时区，until 含当天整天
+- 实现：`collect()` 之后、buildReport 之前对各项目的 ts 数组做范围过滤（空项目删除），
+  所以总时长、分类、项目行、各图表全部反映范围
+- `parseDayArg()` 校验：构造 Date 后回验 年/月/日 分量——`new Date(2026,12,99)`
+  会自动进位不报 NaN，必须拦（迭代 8 踩的坑）；since>until 也报错退出
+- 图表锚点：until 在过去时，日/周/月图以 until 为最后一格；日表起点被 since 截断
+  （`--days` 仍控制窗口上限，默认 30）
+- HTML 头部 sub 行显示「统计范围 X ~ Y」；`--json` 顶层带 `since`/`until`（未设为 null）
 
 ## --json 输出（迭代 7 引入）
 
@@ -64,6 +76,9 @@ cchour --json | jq '.tools["Claude Code"].hours'
 - 迭代 3（GAP=900s）：228.1h / 13.9h
 - 迭代 5：228.5h / 13.9h；杂项 48%→29%
 - 迭代 6：228.6h / 13.9h；杂项 29%→22%
+- 迭代 8：无参数 228.9h / 13.9h（与迭代 7 一致+当日新数据）；
+  `--since 2026-06-01 --until 2026-06-10` → 90.4h，日表 10 根柱（06-01..06-10），
+  头部显示统计范围；无效日期 / since>until 均 exit 1；截图核对渲染正常
 - 迭代 7：228.8h / 13.9h；杂项 22%→18%（51.8h）；`--json` 经 JSON.parse 验证；
   截图核对全部板块正常。
   踩坑提醒：browse 的安全策略只允许 load-html 读 /tmp 或 daemon 启动时的 cwd
@@ -72,9 +87,9 @@ cchour --json | jq '.tools["Claude Code"].hours'
 
 ## 下次迭代可做
 
-1. **npm publish 1.4.0（唯一卡点）**：用户在项目目录跑 `npm publish --access public --otp=<code>`，
-   再 `npx cchour@1.4.0 --version` 验证（1.2.0/1.3.0 从未发布，跳过即可）
+1. **npm publish 1.5.0（唯一卡点）**：用户在项目目录跑 `npm publish --access public --otp=<code>`，
+   再 `npx cchour@1.5.0 --version` 验证（1.2.0–1.4.0 从未发布，跳过即可）
 2. 剩余杂项 51.8h 已多为真杂项（"继续"、零散问答）；再降收益递减
 3. 其他工具（Gemini CLI / Copilot）目前本机无会话日志，等有数据再接
-4. 可加 launchd 定时刷新（数据在本地，无 iCloud 限制）；`--json` 已为此铺路
-5. 可考虑 `--since` / `--until` 日期过滤参数
+4. 可加 launchd 定时刷新（数据在本地，无 iCloud 限制）；`--json` + `--since` 已为此铺路
+5. 可考虑周报模式：`cchour --since <上周一> --until <上周日> --json` 一键出周报

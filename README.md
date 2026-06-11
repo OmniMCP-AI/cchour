@@ -26,9 +26,16 @@ cchour                    # writes ./cchour-report.html
 cchour --open             # ...and opens it in your browser
 cchour -o ~/report.html   # custom output path
 cchour --days 60          # daily chart window (default 30)
+cchour --since 2026-06-01 # only count activity on/after this date
+cchour --until 2026-06-10 # only count activity up to this date (inclusive)
 cchour --json             # print report data as JSON to stdout
 cchour --json -o out.json # ...or write it to a file
 ```
+
+`--since` / `--until` filter events by local-time date before any stats are
+computed, so totals, charts, categories and project rows all reflect the range.
+The HTML header shows the active range, and the JSON output carries `since` /
+`until` fields. Charts anchor their last bar at `--until` when it is in the past.
 
 ### JSON output
 
