@@ -705,6 +705,9 @@ function printHelp() {
       --days <N>        每日图表显示最近 N 天（默认 30）
       --since <日期>    只统计该日期（含）之后的活动，格式 YYYY-MM-DD
       --until <日期>    只统计该日期（含当天整天）之前的活动，格式 YYYY-MM-DD
+      --week [W]        周报快捷范围：不带值=本周（周一起到今天）；last=上一整周；
+                        YYYY-MM-DD=该日期所在的周（周一 ~ 周日，不超过今天）
+      --month [M]       月报快捷范围：不带值=本月；last=上个整月；YYYY-MM=指定月
       --open            生成后用系统默认浏览器打开
       --json            输出 JSON 而非 HTML（默认打到 stdout，配 -o 则写文件）
   -h, --help            显示帮助
@@ -729,10 +732,57 @@ function parseDayArg(name, s) {
   return d;
 }
 
+// --week/--month 展开成 since/until。周一为一周起点（与周图一致），范围不超过今天。
+function expandShortcutRange(opts) {
+  if (!opts.week && !opts.month) return;
+  if (opts.week && opts.month) {
+    console.error('--week 与 --month 不能同时使用');
+    process.exit(1);
+  }
+  if (opts.since || opts.until) {
+    console.error(`--${opts.week ? 'week' : 'month'} 不能与 --since/--until 同时使用`);
+    process.exit(1);
+  }
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let since, until;
+  if (opts.week) {
+    let anchor;
+    if (opts.week === true) anchor = today;
+    else if (opts.week === 'last') anchor = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7);
+    else anchor = parseDayArg('--week', opts.week);
+    const dow = (anchor.getDay() + 6) % 7; // 周一=0
+    since = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() - dow);
+    until = new Date(since.getFullYear(), since.getMonth(), since.getDate() + 6);
+  } else {
+    let y, mo;
+    if (opts.month === true) { y = today.getFullYear(); mo = today.getMonth(); }
+    else if (opts.month === 'last') { y = today.getFullYear(); mo = today.getMonth() - 1; }
+    else {
+      const m = /^(\d{4})-(\d{2})$/.exec(opts.month);
+      if (!m || +m[2] < 1 || +m[2] > 12) {
+        console.error(`--month 需要 last 或 YYYY-MM 格式，收到: ${opts.month}`);
+        process.exit(1);
+      }
+      y = +m[1];
+      mo = +m[2] - 1;
+    }
+    since = new Date(y, mo, 1);
+    until = new Date(y, mo + 1, 0);
+  }
+  if (since > today) {
+    console.error(`--${opts.week ? 'week' : 'month'} 指定的范围在未来，没有数据`);
+    process.exit(1);
+  }
+  if (until > today) until = today;
+  opts.since = since;
+  opts.until = until;
+}
+
 function parseArgs(argv) {
   const opts = {
     output: 'cchour-report.html', outputSet: false, days: 30, open: false, json: false,
-    since: null, until: null,
+    since: null, until: null, week: null, month: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -742,7 +792,10 @@ function parseArgs(argv) {
     } else if (a === '--days') opts.days = Math.max(1, parseInt(argv[++i], 10) || 30);
     else if (a === '--since') opts.since = parseDayArg('--since', argv[++i]);
     else if (a === '--until') opts.until = parseDayArg('--until', argv[++i]);
-    else if (a === '--open') opts.open = true;
+    else if (a === '--week' || a === '--month') {
+      const next = argv[i + 1];
+      opts[a.slice(2)] = next && !next.startsWith('-') ? argv[++i] : true;
+    } else if (a === '--open') opts.open = true;
     else if (a === '--json') opts.json = true;
     else if (a === '-h' || a === '--help') {
       printHelp();
@@ -760,6 +813,7 @@ function parseArgs(argv) {
     console.error('缺少 --output 的值');
     process.exit(1);
   }
+  expandShortcutRange(opts);
   if (opts.since && opts.until && opts.since > opts.until) {
     console.error('--since 不能晚于 --until');
     process.exit(1);

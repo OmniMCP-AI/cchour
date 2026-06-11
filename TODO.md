@@ -1,5 +1,14 @@
 # TODO — cchour AI 编程工具时间报表
 
+# TODO 迭代 9（2026-06-11）— --week / --month 周报月报快捷模式
+
+- [ ] 1. 确认 npm 发布状态（registry 仍 1.1.0，publish 待用户 OTP，跳过）
+- [ ] 2. 实现 `--week [last|YYYY-MM-DD]` / `--month [last|YYYY-MM]`：展开为 since/until（周一为一周起点，与周图一致）；与显式 `--since`/`--until` 冲突时报错；本周/本月 until 不超过今天
+- [ ] 3. HTML 头部范围行复用迭代 8 的「统计范围」；`--json` 的 since/until 反映展开后的值
+- [ ] 4. 本地运行验证：无参数总量与迭代 8 一致；`--week` / `--week last` / `--month last` 的范围正确、与等价 --since/--until 数字一致；非法值报错退出
+- [ ] 5. 版本 bump 1.6.0，README 补说明，commit + push
+- [ ] 6. 更新 STATE.md / TODO.md
+
 # TODO 迭代 8（2026-06-11）— --since / --until 日期过滤
 
 - [x] 1. 确认 npm 发布状态：registry 仍是 1.1.0，publish 待用户 OTP（直接发最新版即可）
