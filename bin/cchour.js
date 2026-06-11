@@ -121,14 +121,26 @@ function codexProjectName(file) {
 }
 
 // 默认分类规则；可用 ~/.cchour/categories.json 覆盖，
-// 格式: [["分类名", ["关键词", ...]], ...]，按顺序匹配项目名（小写包含）。
+// 格式: [["分类名", ["项目名关键词", ...], ["内容关键词", ...]?], ...]
+// 第二个数组按顺序匹配项目名（小写包含）；可选的第三个数组用于杂项目录会话的
+// 内容级分类——匹配会话首条用户消息，命中则把该会话从「杂项」挪进对应分类。
 const DEFAULT_CATEGORIES = [
-  ['写作与发布', ['wechat', 'publish', 'hugo', 'blog', 'article', 'tweet', 'newsletter', 'syndicat']],
-  ['视频制作', ['video', 'multicam', 'dub', 'subtitle', 'overlay', 'transcrib', 'podcast', 'youtube', 'audio']],
-  ['网站维护', ['website', 'site']],
-  ['技能与工具链', ['skill', 'claude-code', 'claude-logs', 'memory', 'agents', '.claude', 'tmp', 'tool']],
+  ['写作与发布',
+    ['wechat', 'publish', 'hugo', 'blog', 'article', 'tweet', 'newsletter', 'syndicat'],
+    ['公众号', '文章', '博客', '润色', '推文', 'tweet', 'blog', 'newsletter']],
+  ['视频制作',
+    ['video', 'multicam', 'dub', 'subtitle', 'overlay', 'transcrib', 'podcast', 'youtube', 'audio'],
+    ['视频', '字幕', '配音', '剪辑', '转写', 'srt', 'video', 'youtube', '音频']],
+  ['网站维护',
+    ['website', 'site'],
+    ['网站', 'website', 'seo', '域名']],
+  ['技能与工具链',
+    ['skill', 'claude-code', 'claude-logs', 'memory', 'agents', '.claude', 'tmp', 'tool'],
+    ['skill', 'mcp', 'plugin', '插件', '记忆', 'claude code', 'codex']],
   ['杂项（根目录会话）', ['杂项', 'downloads', 'icloud', '临时']],
-  ['基础设施', ['infra', 'dns', 'cloudflare', 'server', 'backup', 'deploy']],
+  ['基础设施',
+    ['infra', 'dns', 'cloudflare', 'server', 'backup', 'deploy'],
+    ['cloudflare', 'dns', '服务器', '部署', 'deploy', '备份', 'backup', '代理', 'proxy', '网盘', 'launchd']],
 ];
 
 function loadCategories() {
@@ -152,6 +164,54 @@ function makeCategorize(rules) {
     }
     return '其他';
   };
+}
+
+// 内容级分类：只用带第三个数组（内容关键词）的规则，未命中返回 null（留在杂项）
+function makeContentCategorize(rules) {
+  const contentRules = rules.filter((r) => Array.isArray(r[2]) && r[2].length);
+  return (text) => {
+    if (!text) return null;
+    const p = text.toLowerCase();
+    for (const [cat, , keys] of contentRules) {
+      for (const k of keys) {
+        if (p.includes(k.toLowerCase())) return cat;
+      }
+    }
+    return null;
+  };
+}
+
+// 取 Claude Code 会话首条真实用户消息的文本（头 256KB 内逐行解析）
+function firstUserText(file) {
+  let head;
+  try {
+    const fd = fs.openSync(file, 'r');
+    const buf = Buffer.allocUnsafe(256 * 1024);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    head = buf.toString('utf8', 0, n);
+  } catch {
+    return '';
+  }
+  for (const line of head.split('\n')) {
+    let j;
+    try {
+      j = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (j.type !== 'user' || !j.message || j.isMeta) continue;
+    const c = j.message.content;
+    let t = typeof c === 'string'
+      ? c
+      : Array.isArray(c)
+        ? c.filter((x) => x && x.type === 'text').map((x) => x.text).join(' ')
+        : '';
+    t = t.replace(/<[^>]*>/g, ' ').trim();
+    if (!t || t.startsWith('Caveat:')) continue;
+    return t.slice(0, 2000);
+  }
+  return '';
 }
 
 function uniqSorted(ts) {
@@ -234,9 +294,11 @@ function walkJsonl(dir, cb) {
   }
 }
 
-function collect() {
+function collect(contentCategorize) {
   // tool -> Map(project -> [timestamps])
   const data = new Map();
+  // 杂项会话经内容级分类拆出的合成项目名 -> 分类（覆盖按项目名的分类）
+  const catOverride = new Map();
   const bucket = (tool, proj) => {
     if (!data.has(tool)) data.set(tool, new Map());
     const m = data.get(tool);
@@ -249,9 +311,19 @@ function collect() {
       const full = path.join(CLAUDE_DIR, d);
       if (!isDir(full)) continue;
       const proj = claudeProjectName(d);
-      const arr = bucket('Claude Code', proj);
+      const isMisc = Boolean(SPECIAL_DIRS[d]);
       for (const fn of fs.readdirSync(full)) {
-        if (fn.endsWith('.jsonl')) scanTimestamps(path.join(full, fn), arr);
+        if (!fn.endsWith('.jsonl')) continue;
+        const file = path.join(full, fn);
+        let p = proj;
+        if (isMisc) {
+          const cat = contentCategorize(firstUserText(file));
+          if (cat) {
+            p = `${proj.replace('（杂项）', '')} · ${cat}`;
+            catOverride.set(p, cat);
+          }
+        }
+        scanTimestamps(file, bucket('Claude Code', p));
       }
     }
   }
@@ -263,7 +335,7 @@ function collect() {
     });
   }
 
-  return data;
+  return { data, catOverride };
 }
 
 function fmtH(sec) {
@@ -272,7 +344,7 @@ function fmtH(sec) {
   return `${Math.round(sec / 60)} 分钟`;
 }
 
-function buildReport(data, categorize, ndays) {
+function buildReport(data, categorize, catOverride, ndays) {
   const toolSeconds = new Map();
   const toolDaily = new Map();
   const toolWeekly = new Map();
@@ -287,7 +359,7 @@ function buildReport(data, categorize, ndays) {
       if (!ts.length) continue;
       const sec = activeSeconds(ts);
       if (sec < 60) continue;
-      const cat = categorize(proj);
+      const cat = catOverride.get(proj) || categorize(proj);
       catSeconds.set(cat, (catSeconds.get(cat) || 0) + sec);
       let first = Infinity;
       let last = -Infinity;
@@ -543,8 +615,10 @@ function printHelp() {
   -v, --version         显示版本
 
 分类规则可用 ~/.cchour/categories.json 自定义，格式:
-  [["分类名", ["关键词1", "关键词2"]], ...]
-按顺序对项目名做小写包含匹配，未命中归入「其他」。`);
+  [["分类名", ["项目名关键词", ...], ["内容关键词", ...]?], ...]
+按顺序对项目名做小写包含匹配，未命中归入「其他」。
+可选的第三个数组用于杂项目录（home / code 根目录等）会话的内容级分类:
+匹配会话首条用户消息，命中则把该会话挪进对应分类。`);
 }
 
 function parseArgs(argv) {
@@ -578,15 +652,15 @@ function main() {
   const t0 = Date.now();
 
   console.error('扫描数据源…');
-  const data = collect();
+  const rules = loadCategories();
+  const { data, catOverride } = collect(makeContentCategorize(rules));
   for (const [tool, projects] of data) {
     let n = 0;
     for (const ts of projects.values()) n += ts.length;
     console.error(`  ${tool}: ${projects.size} 个项目, ${n} 个事件`);
   }
 
-  const categorize = makeCategorize(loadCategories());
-  const report = buildReport(data, categorize, opts.days);
+  const report = buildReport(data, makeCategorize(rules), catOverride, opts.days);
   const html = renderHtml(report);
 
   const outPath = path.resolve(opts.output);

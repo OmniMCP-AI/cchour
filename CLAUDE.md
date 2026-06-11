@@ -10,16 +10,18 @@
 然后把 TODO.md 进行更新
 最终保证TODO.md全都更新为完成
 
+当没有什么想法的时候，自己想一些好想法，然后写入TODO
+
 ## 定义
 相邻时间超过15分钟以上，认为已经离开，15分钟以内认为在持续工作
 可以按照每天，每周，每月的方式进行分别的统计
 
 ## 要求
-
-
 使用 node 体系
 最终做成叫做cchour的命令行
 上传到github，public repo
+如果repo的名字不是cchour，rename成cchour
+
 然后上传到npm
 可以用 npm i cchour 安装
 

@@ -52,14 +52,21 @@ Projects are mapped to categories by ordered keyword rules. To customize, create
 
 ```json
 [
-  ["Writing", ["blog", "article", "publish"]],
-  ["Video", ["video", "subtitle", "podcast"]],
+  ["Writing", ["blog", "article", "publish"], ["公众号", "tweet", "draft"]],
+  ["Video", ["video", "subtitle", "podcast"], ["字幕", "srt", "youtube"]],
   ["Products", ["myapp", "mytool"]]
 ]
 ```
 
 Rules are matched in order against the lowercased project name; unmatched
 projects fall into the catch-all category.
+
+The optional third array enables **content-level classification** for sessions
+started in non-project directories (home, `~/code` root, `/`): the first user
+message of each such session is matched against these content keywords, and the
+session is moved out of the "misc" bucket into the matching category (shown as
+e.g. `code root · Writing` in the project list). Sessions with no match stay
+in misc.
 
 ## Requirements
 

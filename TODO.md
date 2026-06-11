@@ -1,4 +1,13 @@
-# TODO — cctime AI 编程工具时间报表
+# TODO — cchour AI 编程工具时间报表
+
+# TODO 迭代 5（2026-06-11）— npm 发布收尾 + 杂项会话内容级分类
+
+- [ ] 1. 确认 npm 发布成功：registry 上已有 cchour@1.1.0，用 `npx cchour@1.1.0 --version` 验证可安装可运行
+- [ ] 2. 杂项（根目录会话）内容级分类：读会话首条用户消息，按关键词归入已有分类，降低「杂项」占比
+- [ ] 3. 本地运行验证：总时长数字不变（分类不影响间隔法统计），杂项占比明显下降，截图核对
+- [ ] 4. 版本 bump 1.2.0，README 同步，commit + push
+- [ ] 5. npm publish 1.2.0（若再卡 2FA OTP，留指令给用户）
+- [ ] 6. 更新 STATE.md / TODO.md
 
 # TODO 迭代 4（2026-06-11）— 按更新后的 CLAUDE.md 改名 cctime → cchour
 
