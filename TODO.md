@@ -1,5 +1,14 @@
 # TODO — cchour AI 编程工具时间报表
 
+# TODO 迭代 7（2026-06-11）— --json 输出 + 多消息内容分类
+
+- [x] 1. 确认 npm 发布状态：registry 仍是 1.1.0，publish 待用户 OTP（不可自主完成，留给用户，直接发 1.4.0）
+- [x] 2. `--json` 输出模式：默认打 stdout（进度在 stderr 可安全 pipe），显式 `-o` 则写文件；结构含 tools（seconds/hours/daily/weekly/monthly/hourly）、categories、projects
+- [x] 3. 内容级分类扫描前 3 条用户消息：`claudeUserTexts()` / `codexUserTexts()`（Codex 侧对 response_item/event_msg 双格式做相邻去重）
+- [x] 4. 本地运行验证：228.8h / 13.9h（与迭代 6 的 228.6/13.9 一致）；杂项 63.4h·22% → 51.8h·18%；`--json` 经 JSON.parse 验证；截图核对全部板块正常（browse 安全策略限 /tmp 或 daemon cwd，先复制到 /tmp 再 load-html）
+- [x] 5. 版本 bump 1.4.0，README 补 `--json` 说明 + 多消息分类描述，commit + push
+- [x] 6. 更新 STATE.md / TODO.md
+
 # TODO 迭代 6（2026-06-11）— 内容级分类扩展到 Codex 与更多目录
 
 - [x] 1. Codex 杂项会话内容级分类：解析 rollout 里 role=user 的 input_text（剔除 `<environment_context>` 等环境块，避免 "codex" 字样误命中），9 个杂项会话全部成功提取

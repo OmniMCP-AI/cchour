@@ -26,6 +26,19 @@ cchour                    # writes ./cchour-report.html
 cchour --open             # ...and opens it in your browser
 cchour -o ~/report.html   # custom output path
 cchour --days 60          # daily chart window (default 30)
+cchour --json             # print report data as JSON to stdout
+cchour --json -o out.json # ...or write it to a file
+```
+
+### JSON output
+
+`--json` emits the same data the HTML report is built from, for consumption by
+other scripts: per-tool totals and daily/weekly/monthly/hourly buckets, category
+totals, and per-project rows (`tool`, `project`, `seconds`, `category`,
+`firstTs`, `lastTs`). Progress messages go to stderr, so piping stdout is safe:
+
+```bash
+cchour --json | jq '.tools["Claude Code"].hours'
 ```
 
 ## Data sources
@@ -63,8 +76,8 @@ projects fall into the catch-all category.
 
 The optional third array enables **content-level classification** for sessions
 started in non-project directories (home, `~/code` root, `/`, Downloads,
-Desktop, Documents, iCloud Drive): the first user message of each such session
-is matched against these content keywords, and the session is moved out of the
+Desktop, Documents, iCloud Drive): the first few user messages of each such
+session are matched against these content keywords, and the session is moved out of the
 "misc" bucket into the matching category (shown as e.g. `code root · Writing`
 in the project list). Sessions with no match stay in misc. This works for both
 Claude Code and Codex sessions.

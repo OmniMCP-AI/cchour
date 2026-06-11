@@ -195,8 +195,12 @@ function makeContentCategorize(rules) {
   };
 }
 
-// 取 Claude Code 会话首条真实用户消息的文本（头 256KB 内逐行解析）
-function firstUserText(head) {
+// 取 Claude Code 会话前几条真实用户消息的文本（头 256KB 内逐行解析）。
+// 只看首条容易漏：不少会话第一句是"继续"、"看看这个"之类，主题在第 2-3 条才出现。
+const CONTENT_MSGS = 3;
+
+function claudeUserTexts(head) {
+  const texts = [];
   for (const line of head.split('\n')) {
     let j;
     try {
@@ -213,15 +217,17 @@ function firstUserText(head) {
         : '';
     t = t.replace(/<[^>]*>/g, ' ').trim();
     if (!t || t.startsWith('Caveat:')) continue;
-    return t.slice(0, 2000);
+    texts.push(t.slice(0, 2000));
+    if (texts.length >= CONTENT_MSGS) break;
   }
-  return '';
+  return texts.join('\n');
 }
 
-// 取 Codex 会话首条真实用户输入（rollout 格式：response_item payload 里
+// 取 Codex 会话前几条真实用户输入（rollout 格式：response_item payload 里
 // role=user 的 input_text）。首条往往是 <environment_context> 环境信息，
 // 文本里含 "codex" 等字样会误命中内容关键词，需整块剔除后再判断。
-function codexFirstUserText(head) {
+function codexUserTexts(head) {
+  const texts = [];
   for (const line of head.split('\n')) {
     let j;
     try {
@@ -244,9 +250,12 @@ function codexFirstUserText(head) {
       .replace(/<[^>]*>/g, ' ')
       .trim();
     if (!t) continue;
-    return t.slice(0, 2000);
+    t = t.slice(0, 2000);
+    // 同一条输入可能以 response_item 和 event_msg 两种形式各出现一次，去重
+    if (texts[texts.length - 1] !== t) texts.push(t);
+    if (texts.length >= CONTENT_MSGS) break;
   }
-  return '';
+  return texts.join('\n');
 }
 
 function uniqSorted(ts) {
@@ -352,7 +361,7 @@ function collect(contentCategorize) {
         const file = path.join(full, fn);
         let p = proj;
         if (isMisc) {
-          const cat = contentCategorize(firstUserText(readHead(file)));
+          const cat = contentCategorize(claudeUserTexts(readHead(file)));
           if (cat) {
             p = `${proj.replace('（杂项）', '')} · ${cat}`;
             catOverride.set(p, cat);
@@ -369,7 +378,7 @@ function collect(contentCategorize) {
       const proj = codexProjectName(head);
       let p = proj;
       if (CODEX_MISC_PROJECTS.has(proj)) {
-        const cat = contentCategorize(codexFirstUserText(head));
+        const cat = contentCategorize(codexUserTexts(head));
         if (cat) {
           p = `${proj.replace('（杂项）', '')} · ${cat}`;
           catOverride.set(p, cat);
@@ -646,6 +655,37 @@ function renderHtml({
 </html>`;
 }
 
+// --json 输出：报表数据序列化为 JSON，方便其他脚本消费
+function renderJson({ toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourly, projRows, catSeconds }) {
+  const m2o = (m) => Object.fromEntries(Array.from(m.entries()).sort());
+  const tools = {};
+  for (const [t, sec] of toolSeconds) {
+    tools[t] = {
+      seconds: sec,
+      hours: +(sec / 3600).toFixed(2),
+      daily: m2o(toolDaily.get(t)),
+      weekly: m2o(toolWeekly.get(t)),
+      monthly: m2o(toolMonthly.get(t)),
+      hourly: m2o(toolHourly.get(t)),
+    };
+  }
+  return JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    gapSeconds: GAP,
+    totalSeconds: Array.from(toolSeconds.values()).reduce((a, b) => a + b, 0),
+    tools,
+    categories: m2o(catSeconds),
+    projects: projRows.map((r) => ({
+      tool: r.tool,
+      project: r.proj,
+      seconds: r.sec,
+      category: r.cat,
+      firstTs: r.first,
+      lastTs: r.last,
+    })),
+  }, null, 2);
+}
+
 function printHelp() {
   console.log(`cchour v${pkg.version} — AI 编程工具时间报表 (Claude Code / Codex)
 
@@ -655,6 +695,7 @@ function printHelp() {
   -o, --output <文件>   输出 HTML 路径（默认 ./cchour-report.html）
       --days <N>        每日图表显示最近 N 天（默认 30）
       --open            生成后用系统默认浏览器打开
+      --json            输出 JSON 而非 HTML（默认打到 stdout，配 -o 则写文件）
   -h, --help            显示帮助
   -v, --version         显示版本
 
@@ -666,12 +707,15 @@ function printHelp() {
 }
 
 function parseArgs(argv) {
-  const opts = { output: 'cchour-report.html', days: 30, open: false };
+  const opts = { output: 'cchour-report.html', outputSet: false, days: 30, open: false, json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '-o' || a === '--output') opts.output = argv[++i];
-    else if (a === '--days') opts.days = Math.max(1, parseInt(argv[++i], 10) || 30);
+    if (a === '-o' || a === '--output') {
+      opts.output = argv[++i];
+      opts.outputSet = true;
+    } else if (a === '--days') opts.days = Math.max(1, parseInt(argv[++i], 10) || 30);
     else if (a === '--open') opts.open = true;
+    else if (a === '--json') opts.json = true;
     else if (a === '-h' || a === '--help') {
       printHelp();
       process.exit(0);
@@ -705,13 +749,26 @@ function main() {
   }
 
   const report = buildReport(data, makeCategorize(rules), catOverride, opts.days);
-  const html = renderHtml(report);
-
-  const outPath = path.resolve(opts.output);
-  fs.writeFileSync(outPath, html, 'utf8');
 
   const sorted = Array.from(report.toolSeconds.entries()).sort((a, b) => b[1] - a[1]);
   for (const [t, s] of sorted) console.error(`  ${t}: ${(s / 3600).toFixed(1)} 小时`);
+
+  if (opts.json) {
+    const json = renderJson(report);
+    if (opts.outputSet) {
+      const outPath = path.resolve(opts.output);
+      fs.writeFileSync(outPath, json + '\n', 'utf8');
+      console.error(`已生成 ${outPath}（耗时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒）`);
+    } else {
+      console.log(json);
+      console.error(`耗时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒`);
+    }
+    return;
+  }
+
+  const html = renderHtml(report);
+  const outPath = path.resolve(opts.output);
+  fs.writeFileSync(outPath, html, 'utf8');
   console.error(`已生成 ${outPath}（耗时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒）`);
 
   if (opts.open) {
