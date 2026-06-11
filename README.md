@@ -18,6 +18,12 @@ Everything runs locally. Nothing is uploaded anywhere.
 npm i -g cchour
 ```
 
+Or with Homebrew:
+
+```bash
+brew install jianshuo/tap/cchour
+```
+
 Or run without installing:
 
 ```bash
