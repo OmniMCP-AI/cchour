@@ -2,12 +2,12 @@
 
 # TODO 迭代 9（2026-06-11）— --week / --month 周报月报快捷模式
 
-- [ ] 1. 确认 npm 发布状态（registry 仍 1.1.0，publish 待用户 OTP，跳过）
-- [ ] 2. 实现 `--week [last|YYYY-MM-DD]` / `--month [last|YYYY-MM]`：展开为 since/until（周一为一周起点，与周图一致）；与显式 `--since`/`--until` 冲突时报错；本周/本月 until 不超过今天
-- [ ] 3. HTML 头部范围行复用迭代 8 的「统计范围」；`--json` 的 since/until 反映展开后的值
-- [ ] 4. 本地运行验证：无参数总量与迭代 8 一致；`--week` / `--week last` / `--month last` 的范围正确、与等价 --since/--until 数字一致；非法值报错退出
-- [ ] 5. 版本 bump 1.6.0，README 补说明，commit + push
-- [ ] 6. 更新 STATE.md / TODO.md
+- [x] 1. 确认 npm 发布状态（registry 仍 1.1.0，publish 待用户 OTP，跳过）
+- [x] 2. 实现 `--week [last|YYYY-MM-DD]` / `--month [last|YYYY-MM]`：`expandShortcutRange()` 展开为 since/until（周一为一周起点，与周图一致）；与显式 `--since`/`--until` 或彼此同用时报错；范围在未来报错；until 不超过今天
+- [x] 3. HTML 头部范围行复用迭代 8 的「统计范围」（展开后自动生效）；`--json` 的 since/until 反映展开后的值
+- [x] 4. 本地运行验证：无参数 229.0h/13.9h（与迭代 8 一致+当日新数据）；`--week`=06-08~06-11、`--week last`=06-01~06-07（与等价 --since/--until 的 63.55h/2.59h 完全一致）、`--month last`=05-01~05-31（133.3h/11.3h）、`--week 2026-06-03` 落在 06-01~06-07；6 种非法/冲突用法全部 exit 1；HTML 头部显示「统计范围 2026-05-01 ~ 2026-05-31」
+- [x] 5. 版本 bump 1.6.0，README 补说明，commit + push（b6be23c）
+- [x] 6. 更新 STATE.md / TODO.md
 
 # TODO 迭代 8（2026-06-11）— --since / --until 日期过滤
 

@@ -1,15 +1,27 @@
 # STATE — cchour 项目状态
 
-## 当前状态（迭代 8 完成，2026-06-11）
+## 当前状态（迭代 9 完成，2026-06-11）
 
-Node.js 零依赖 CLI，**v1.5.0（本地，待 publish）**：
+Node.js 零依赖 CLI，**v1.6.0（本地，待 publish）**：
 
 - 代码：`bin/cchour.js`（单文件，零依赖，Node ≥ 18）
-- GitHub：https://github.com/jianshuo/cchour （public，main，已 push v1.5.0）
-- npm：**cchour@1.1.0 已发布**；1.2.0–1.5.0 均未发布——publish 卡 2FA，
-  需用户在项目目录跑 `npm publish --access public --otp=<验证码>`（直接发 1.5.0 即可）
-- 迭代 8 改动：`--since` / `--until` 日期过滤（详见下节）
+- GitHub：https://github.com/jianshuo/cchour （public，main，已 push v1.6.0，b6be23c）
+- npm：**cchour@1.1.0 已发布**；1.2.0–1.6.0 均未发布——publish 卡 2FA，
+  需用户在项目目录跑 `npm publish --access public --otp=<验证码>`（直接发 1.6.0 即可）
+- 迭代 9 改动：`--week` / `--month` 周报月报快捷范围（详见下节）
+- 迭代 8 改动：`--since` / `--until` 日期过滤
 - 迭代 7 改动：① `--json` 输出模式；② 内容级分类改为扫描前 3 条用户消息——杂项 **22% → 18%**
+
+## --week / --month（迭代 9 引入）
+
+- `--week`（本周：周一~今天）、`--week last`（上一整周）、`--week YYYY-MM-DD`（该日期所在周）；
+  `--month` / `--month last` / `--month YYYY-MM` 同理
+- 实现：`expandShortcutRange()` 在 parseArgs 末尾把快捷方式展开成 since/until，
+  之后走迭代 8 的全套管线（过滤、图表锚点、HTML 头部范围行、--json 字段）零额外改动
+- 周一为一周起点（`(getDay()+6)%7`，与周图一致）；until 封顶今天；范围在未来报错
+- 互斥：--week/--month 彼此、以及与显式 --since/--until 同用都 exit 1
+- 可选值解析：下一个 argv 存在且不以 `-` 开头才当值，否则取 true（不带值的形式）
+- 一键周报：`cchour --week last --json`
 
 ## --since / --until（迭代 8 引入）
 
@@ -76,6 +88,10 @@ cchour --json | jq '.tools["Claude Code"].hours'
 - 迭代 3（GAP=900s）：228.1h / 13.9h
 - 迭代 5：228.5h / 13.9h；杂项 48%→29%
 - 迭代 6：228.6h / 13.9h；杂项 29%→22%
+- 迭代 9：无参数 229.0h / 13.9h（与迭代 8 一致+当日新数据）；
+  `--week last` = 06-01~06-07，63.55h/2.59h，与等价 `--since/--until` 完全一致；
+  `--month last` = 05-01~05-31，133.3h/11.3h；HTML 头部范围行正确；
+  6 种非法/冲突用法（同用、未来月、2026-13 等）全部 exit 1
 - 迭代 8：无参数 228.9h / 13.9h（与迭代 7 一致+当日新数据）；
   `--since 2026-06-01 --until 2026-06-10` → 90.4h，日表 10 根柱（06-01..06-10），
   头部显示统计范围；无效日期 / since>until 均 exit 1；截图核对渲染正常
@@ -87,9 +103,10 @@ cchour --json | jq '.tools["Claude Code"].hours'
 
 ## 下次迭代可做
 
-1. **npm publish 1.5.0（唯一卡点）**：用户在项目目录跑 `npm publish --access public --otp=<code>`，
-   再 `npx cchour@1.5.0 --version` 验证（1.2.0–1.4.0 从未发布，跳过即可）
+1. **npm publish 1.6.0（唯一卡点）**：用户在项目目录跑 `npm publish --access public --otp=<code>`，
+   再 `npx cchour@1.6.0 --version` 验证（1.2.0–1.5.0 从未发布，跳过即可）
 2. 剩余杂项 51.8h 已多为真杂项（"继续"、零散问答）；再降收益递减
 3. 其他工具（Gemini CLI / Copilot）目前本机无会话日志，等有数据再接
-4. 可加 launchd 定时刷新（数据在本地，无 iCloud 限制）；`--json` + `--since` 已为此铺路
-5. 可考虑周报模式：`cchour --since <上周一> --until <上周日> --json` 一键出周报
+4. 可加 launchd 定时刷新（数据在本地，无 iCloud 限制）；`--json` + `--week` 已为此铺路
+5. 可考虑两个范围对比模式（本周 vs 上周涨跌），基于 --week/--month 容易做
+6. 杂项之外的下一个洞察方向：每小时热力图按「工作日 vs 周末」拆分
