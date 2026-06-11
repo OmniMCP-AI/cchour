@@ -12,11 +12,11 @@
 
 ## 迭代 2（2026-06-11）— Node 化 + 发布
 
-- [ ] 1. 检查 npm 包名 `cctime` 是否可用、npm 登录状态、gh CLI 状态
-- [ ] 2. 把 cctime.py 移植为 Node.js（零依赖，流式解析，逻辑与 Python 版一致）
-- [ ] 3. package.json：`bin: { cctime }`，可 `npx cctime` / 全局安装后直接运行
-- [ ] 4. 本地运行验证：生成 report.html，数字与 Python 版对齐
-- [ ] 5. 写 README.md（英文，npm 风格）+ .gitignore + LICENSE
-- [ ] 6. git init，建 GitHub public repo 并 push
-- [ ] 7. npm publish，验证 `npm i -g cctime` 可装可跑
-- [ ] 8. 更新 STATE.md，TODO 全部勾完
+- [x] 1. 检查 npm 包名 `cctime` 可用 ✓、npm 已登录（jianshuo）✓、gh 已认证 ✓
+- [x] 2. 把 cctime.py 移植为 Node.js `bin/cctime.js`（零依赖，流式解析；个人分类规则抽到 ~/.cctime/categories.json）
+- [x] 3. package.json：`bin: { cctime }`，支持 `-o` `--days` `--open` `--help` `--version`
+- [x] 4. 本地运行验证：186.9h / 11.6h 与 Python 版对齐，0.3 秒；browse 截图核对渲染正常
+- [x] 5. README.md + .gitignore（排除 report.html 个人数据）+ LICENSE (MIT)
+- [x] 6. git init，https://github.com/jianshuo/cctime 已 push（cctime.py 已移除）
+- [ ] 7. npm publish — **卡在 npm 2FA OTP，需用户提供验证码**；之后用 `npx cctime --version` 验证
+- [x] 8. 更新 STATE.md
