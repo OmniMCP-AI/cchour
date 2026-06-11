@@ -2,8 +2,8 @@
 
 See how much time you actually spend in AI coding tools. `cctime` scans the local
 session logs of **Claude Code** and **Codex**, computes your active hours, and
-renders a self-contained HTML report — daily stacked bars, hour-of-day
-distribution, work categories, and top projects.
+renders a self-contained HTML report — daily, weekly and monthly stacked bars,
+hour-of-day distribution, work categories, and top projects.
 
 Everything runs locally. Nothing is uploaded anywhere.
 
@@ -40,7 +40,7 @@ parsing), so hundreds of MB of logs take about a second.
 
 ## How active time is computed
 
-Events are grouped and sorted by time. A gap of **≤ 5 minutes** between adjacent
+Events are grouped and sorted by time. A gap of **≤ 15 minutes** between adjacent
 events counts as continuous work; a longer gap means you stepped away and is not
 counted. An isolated event counts as 30 seconds. Per-tool totals are computed on
 the union of all events of that tool, so parallel sessions are not double-counted.

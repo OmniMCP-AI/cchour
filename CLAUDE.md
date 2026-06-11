@@ -15,10 +15,12 @@
 可以按照每天，每周，每月的方式进行分别的统计
 
 ## 要求
+
+
 使用 node 体系
-最终做成叫做cctime的命令行
+最终做成叫做cchour的命令行
 上传到github，public repo
 然后上传到npm
-可以用 npm i cctime 安装
+可以用 npm i cchour 安装
 
 

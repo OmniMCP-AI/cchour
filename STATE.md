@@ -1,13 +1,13 @@
 # STATE — cctime 项目状态
 
-## 当前状态（迭代 2 完成，2026-06-11）
+## 当前状态（迭代 3 完成，2026-06-11）
 
-Python 版（迭代 1）已移植为 **Node.js 零依赖 CLI** 并开源：
+Node.js 零依赖 CLI，**v1.1.0**，已对齐需求规格：
 
 - 代码：`bin/cctime.js`（单文件，零依赖，Node ≥ 18）
 - GitHub：https://github.com/jianshuo/cctime （public，main 分支）
-- npm：包名 `cctime` v1.0.0 —— **publish 卡在 npm 2FA OTP，等用户提供验证码**（`npm publish --otp=<code>`）
-- 旧的 `cctime.py` 已从仓库删除（个人分类关键词不进公开仓库）
+- npm：**尚未发布** —— publish 卡在 npm 2FA OTP（迭代 2、3 各试一次均 EOTP），等用户跑 `npm publish --otp=<验证码>`
+- 迭代 3 改动：GAP 300→900 秒（需求定义是 15 分钟）；新增每周（12 周，周一起点）/ 每月（12 个月）堆叠图；README 同步
 
 ## 用法
 
@@ -24,7 +24,7 @@ cctime -o report.html --days 60
 | Claude Code | `~/.claude/projects/<flattened-cwd>/*.jsonl` | 时间戳正则流式提取，worktree 归并主项目 |
 | Codex | `~/.codex/sessions/` + `~/.codex/archived_sessions/` | 文件头 256KB 正则取 `cwd`（session_meta 首行可能超长，不能按行 JSON.parse——迭代 2 踩过的坑） |
 
-- 活跃时长 = 间隔法：相邻事件 ≤ 300 秒计入，孤立事件计 30 秒
+- 活跃时长 = 间隔法：相邻事件 ≤ 900 秒（15 分钟，按需求定义）计入，孤立事件计 30 秒
 - 工具总时长按事件并集，避免并行会话重复计
 - 时区：Node 版用系统本地时区（不再硬编码 +8）
 - 性能：783MB 数据约 0.3 秒（比 Python 版还快）
@@ -35,14 +35,15 @@ cctime -o report.html --days 60
 - `report.html` / `cctime-report.html` 在 .gitignore 里，个人数据不进公开仓库
 - 路径前缀从 `os.homedir()` 动态算，不再硬编码 `/Users/jianshuo`
 
-## 验证记录（2026-06-11）
+## 验证记录
 
-- Node 版与 Python 版数字对齐：Claude Code 186.9h / Codex 11.6h、Codex 31 个项目
-- `--version` `--help` `-o` 正常；gstack browse 截图核对：卡片 198h/187h/12h、30 天日图、24h 分布、分类、Top20 渲染全部正常，浅色白底
+- 迭代 2（GAP=300s）：Node 版与 Python 版数字对齐：Claude Code 186.9h / Codex 11.6h
+- 迭代 3（GAP=900s）：Claude Code 228.1h / Codex 13.9h，总 242h；阈值放宽数字变大，方向正确
+- 迭代 3 截图核对：卡片、30 天日图、12 周图、12 月图（数据从 5 月起所以月图只有尾部两根柱）、24h 分布、分类、Top20 全部渲染正常，浅色白底
 
 ## 下次迭代可做
 
-1. npm publish 完成后用 `npx cctime@1.0.0 --version` 验证安装
+1. **npm publish（唯一卡点）**：用户提供 OTP 后 `npm publish --otp=<code>`，再 `npx cctime@1.1.0 --version` 验证
 2. 「杂项（根目录会话）」仍占比最大，可读会话首条用户消息做内容级分类
 3. 其他工具（Gemini CLI / Copilot）接入
 4. 可加 launchd 定时刷新（数据在本地，无 iCloud 限制）

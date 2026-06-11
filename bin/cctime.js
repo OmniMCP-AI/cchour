@@ -7,7 +7,7 @@
  *   Codex:       ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl + ~/.codex/archived_sessions/
  *                (session_meta 行带 cwd)
  *
- * 活跃时长算法（间隔法）: 同一组内事件按时间排序，相邻间隔 <= GAP（5 分钟）计入时长，
+ * 活跃时长算法（间隔法）: 同一组内事件按时间排序，相邻间隔 <= GAP（15 分钟）计入时长，
  * 超过视为离开，不计。每个孤立事件至少计 MIN_EVENT 秒。
  */
 'use strict';
@@ -26,7 +26,7 @@ const CODEX_DIRS = [
   path.join(HOME, '.codex', 'archived_sessions'),
 ];
 
-const GAP = 300; // 相邻事件最大间隔（秒）
+const GAP = 900; // 相邻事件最大间隔（秒）：15 分钟以内算持续工作
 const MIN_EVENT = 30; // 孤立事件的最小计时（秒）
 const CHUNK = 4 * 1024 * 1024;
 
@@ -182,31 +182,35 @@ function dayKey(t) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-function dailyActive(ts) {
+// 周以周一为起点，key 为周一的日期字符串
+function weekKey(t) {
+  const d = new Date(t * 1000);
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+  return `${monday.getFullYear()}-${pad2(monday.getMonth() + 1)}-${pad2(monday.getDate())}`;
+}
+
+function monthKey(t) {
+  const d = new Date(t * 1000);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+}
+
+function bucketActive(ts, keyFn) {
   const out = new Map();
   const u = uniqSorted(ts);
   let prev = null;
   for (const t of u) {
-    const d = dayKey(t);
+    const k = keyFn(t);
     const inc = prev !== null && t - prev <= GAP ? t - prev : MIN_EVENT;
-    out.set(d, (out.get(d) || 0) + inc);
+    out.set(k, (out.get(k) || 0) + inc);
     prev = t;
   }
   return out;
 }
 
-function hourlyActive(ts) {
-  const out = new Map();
-  const u = uniqSorted(ts);
-  let prev = null;
-  for (const t of u) {
-    const h = new Date(t * 1000).getHours();
-    const inc = prev !== null && t - prev <= GAP ? t - prev : MIN_EVENT;
-    out.set(h, (out.get(h) || 0) + inc);
-    prev = t;
-  }
-  return out;
-}
+const dailyActive = (ts) => bucketActive(ts, dayKey);
+const weeklyActive = (ts) => bucketActive(ts, weekKey);
+const monthlyActive = (ts) => bucketActive(ts, monthKey);
+const hourlyActive = (ts) => bucketActive(ts, (t) => new Date(t * 1000).getHours());
 
 function isDir(p) {
   try {
@@ -271,6 +275,8 @@ function fmtH(sec) {
 function buildReport(data, categorize, ndays) {
   const toolSeconds = new Map();
   const toolDaily = new Map();
+  const toolWeekly = new Map();
+  const toolMonthly = new Map();
   const toolHourly = new Map();
   const projRows = []; // {tool, proj, sec, cat, first, last}
   const catSeconds = new Map();
@@ -294,6 +300,8 @@ function buildReport(data, categorize, ndays) {
     }
     toolSeconds.set(tool, activeSeconds(allTs));
     toolDaily.set(tool, dailyActive(allTs));
+    toolWeekly.set(tool, weeklyActive(allTs));
+    toolMonthly.set(tool, monthlyActive(allTs));
     toolHourly.set(tool, hourlyActive(allTs));
   }
 
@@ -306,13 +314,52 @@ function buildReport(data, categorize, ndays) {
     days.push(`${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`);
   }
 
-  return { toolSeconds, toolDaily, toolHourly, projRows, catSeconds, days };
+  // 最近 12 周（周一为起点）与最近 12 个月
+  const weeks = [];
+  for (let i = 11; i >= 0; i--) {
+    weeks.push(weekKey(now.getTime() / 1000 - i * 7 * 86400));
+  }
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${pad2(d.getMonth() + 1)}`);
+  }
+
+  return {
+    toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourly,
+    projRows, catSeconds, days, weeks, months,
+  };
 }
 
 const TOOL_COLORS = { 'Claude Code': '#D97757', Codex: '#4A7DBE' };
 const CAT_COLORS = ['#D97757', '#4A7DBE', '#5BA88B', '#C9A227', '#9B7BB8', '#D86F8C', '#8A9BA8'];
 
-function renderHtml({ toolSeconds, toolDaily, toolHourly, projRows, catSeconds, days }) {
+function stackedBars(keys, tools, byTool, color, labelFn, height) {
+  let max = 1;
+  for (const k of keys) {
+    const v = tools.reduce((a, t) => a + (byTool.get(t).get(k) || 0), 0);
+    if (v > max) max = v;
+  }
+  let bars = '';
+  for (const k of keys) {
+    let segs = '';
+    let total = 0;
+    for (const t of tools) {
+      const v = byTool.get(t).get(k) || 0;
+      total += v;
+      const h = (v / max) * height;
+      if (h > 0.5) segs += `<div class="seg" style="height:${h.toFixed(1)}px;background:${color(t)}"></div>`;
+    }
+    const tip = `${k} · ${(total / 3600).toFixed(1)}h`;
+    bars += `<div class="bar" title="${tip}"><div class="bar-stack">${segs}</div><div class="bar-x">${labelFn(k)}</div></div>`;
+  }
+  return bars;
+}
+
+function renderHtml({
+  toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourly,
+  projRows, catSeconds, days, weeks, months,
+}) {
   const total = Array.from(toolSeconds.values()).reduce((a, b) => a + b, 0);
   const tools = Array.from(toolSeconds.keys()).sort((a, b) => toolSeconds.get(b) - toolSeconds.get(a));
   const now = new Date();
@@ -335,26 +382,10 @@ function renderHtml({ toolSeconds, toolDaily, toolHourly, projRows, catSeconds, 
       <div class="card-sub">占比 ${pct.toFixed(0)}% · 日均 ${(toolSeconds.get(t) / 3600 / spanDays).toFixed(1)} 小时</div></div>`;
   }
 
-  // ---- 每日堆叠柱状图 ----
-  let maxDay = 1;
-  for (const d of days) {
-    const v = tools.reduce((a, t) => a + (toolDaily.get(t).get(d) || 0), 0);
-    if (v > maxDay) maxDay = v;
-  }
-  let bars = '';
-  for (const d of days) {
-    let segs = '';
-    let labelTotal = 0;
-    for (const t of tools) {
-      const v = toolDaily.get(t).get(d) || 0;
-      labelTotal += v;
-      const h = (v / maxDay) * 160;
-      if (h > 0.5) segs += `<div class="seg" style="height:${h.toFixed(1)}px;background:${color(t)}"></div>`;
-    }
-    const tip = `${d} · ${(labelTotal / 3600).toFixed(1)}h`;
-    const dlabel = d.slice(5).replace('-', '/');
-    bars += `<div class="bar" title="${tip}"><div class="bar-stack">${segs}</div><div class="bar-x">${dlabel}</div></div>`;
-  }
+  // ---- 每日 / 每周 / 每月堆叠柱状图 ----
+  const bars = stackedBars(days, tools, toolDaily, color, (d) => d.slice(5).replace('-', '/'), 160);
+  const weekBars = stackedBars(weeks, tools, toolWeekly, color, (w) => w.slice(5).replace('-', '/'), 150);
+  const monthBars = stackedBars(months, tools, toolMonthly, color, (m) => m.slice(2).replace('-', '/'), 150);
 
   const legend = tools
     .map((t) => `<span class="lg"><span class="dot" style="background:${color(t)}"></span>${t}</span>`)
@@ -456,7 +487,7 @@ function renderHtml({ toolSeconds, toolDaily, toolHourly, projRows, catSeconds, 
 <body>
 <div class="wrap">
   <h1>AI 编程工具时间报表</h1>
-  <div class="sub">生成于 ${genTime} · 数据来自本机 Claude Code 与 Codex 会话记录 · 活跃时长 = 相邻操作间隔 ≤ 5 分钟的累计</div>
+  <div class="sub">生成于 ${genTime} · 数据来自本机 Claude Code 与 Codex 会话记录 · 活跃时长 = 相邻操作间隔 ≤ 15 分钟的累计</div>
 
   <div class="cards">${cards}
   </div>
@@ -464,6 +495,18 @@ function renderHtml({ toolSeconds, toolDaily, toolHourly, projRows, catSeconds, 
   <h2>最近 ${days.length} 天每日使用</h2>
   <div class="panel">
     <div class="chart">${bars}</div>
+    <div class="legend">${legend}</div>
+  </div>
+
+  <h2>最近 ${weeks.length} 周每周使用（以周一为起点）</h2>
+  <div class="panel">
+    <div class="chart" style="height:180px">${weekBars}</div>
+    <div class="legend">${legend}</div>
+  </div>
+
+  <h2>最近 ${months.length} 个月每月使用</h2>
+  <div class="panel">
+    <div class="chart" style="height:180px">${monthBars}</div>
     <div class="legend">${legend}</div>
   </div>
 
