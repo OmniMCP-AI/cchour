@@ -1,6 +1,6 @@
 node_modules/
 report.html
-cctime-report.html
+cchour-report.html
 *.log
 .DS_Store
 .gstack/

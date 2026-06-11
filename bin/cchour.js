@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * cctime — 统计在各 AI 编程工具（Claude Code / Codex）上的使用时间，输出 HTML 报表。
+ * cchour — 统计在各 AI 编程工具（Claude Code / Codex）上的使用时间，输出 HTML 报表。
  *
  * 数据源:
  *   Claude Code: ~/.claude/projects/<flattened-cwd>/*.jsonl  (每行 JSON 带 "timestamp":"...Z")
@@ -120,7 +120,7 @@ function codexProjectName(file) {
   return path.basename(cwd) || 'home';
 }
 
-// 默认分类规则；可用 ~/.cctime/categories.json 覆盖，
+// 默认分类规则；可用 ~/.cchour/categories.json 覆盖，
 // 格式: [["分类名", ["关键词", ...]], ...]，按顺序匹配项目名（小写包含）。
 const DEFAULT_CATEGORIES = [
   ['写作与发布', ['wechat', 'publish', 'hugo', 'blog', 'article', 'tweet', 'newsletter', 'syndicat']],
@@ -132,7 +132,7 @@ const DEFAULT_CATEGORIES = [
 ];
 
 function loadCategories() {
-  const p = path.join(HOME, '.cctime', 'categories.json');
+  const p = path.join(HOME, '.cchour', 'categories.json');
   try {
     const rules = JSON.parse(fs.readFileSync(p, 'utf8'));
     if (Array.isArray(rules) && rules.length) return rules;
@@ -524,31 +524,31 @@ function renderHtml({
   <div class="panel">${projHtml}
   </div>
 
-  <footer>cctime · 全部数据在本机统计，未上传任何服务</footer>
+  <footer>cchour · 全部数据在本机统计，未上传任何服务</footer>
 </div>
 </body>
 </html>`;
 }
 
 function printHelp() {
-  console.log(`cctime v${pkg.version} — AI 编程工具时间报表 (Claude Code / Codex)
+  console.log(`cchour v${pkg.version} — AI 编程工具时间报表 (Claude Code / Codex)
 
-用法: cctime [选项]
+用法: cchour [选项]
 
 选项:
-  -o, --output <文件>   输出 HTML 路径（默认 ./cctime-report.html）
+  -o, --output <文件>   输出 HTML 路径（默认 ./cchour-report.html）
       --days <N>        每日图表显示最近 N 天（默认 30）
       --open            生成后用系统默认浏览器打开
   -h, --help            显示帮助
   -v, --version         显示版本
 
-分类规则可用 ~/.cctime/categories.json 自定义，格式:
+分类规则可用 ~/.cchour/categories.json 自定义，格式:
   [["分类名", ["关键词1", "关键词2"]], ...]
 按顺序对项目名做小写包含匹配，未命中归入「其他」。`);
 }
 
 function parseArgs(argv) {
-  const opts = { output: 'cctime-report.html', days: 30, open: false };
+  const opts = { output: 'cchour-report.html', days: 30, open: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-o' || a === '--output') opts.output = argv[++i];

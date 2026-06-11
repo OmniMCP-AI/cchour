@@ -1,9 +1,9 @@
 {
-  "name": "cctime",
+  "name": "cchour",
   "version": "1.1.0",
   "description": "See how much time you actually spend in AI coding tools (Claude Code / Codex) — generates a local HTML report from session logs",
   "bin": {
-    "cctime": "bin/cctime.js"
+    "cchour": "bin/cchour.js"
   },
   "files": [
     "bin"
@@ -12,15 +12,15 @@
     "node": ">=18"
   },
   "scripts": {
-    "start": "node bin/cctime.js"
+    "start": "node bin/cchour.js"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jianshuo/cctime.git"
+    "url": "git+https://github.com/jianshuo/cchour.git"
   },
-  "homepage": "https://github.com/jianshuo/cctime#readme",
+  "homepage": "https://github.com/jianshuo/cchour#readme",
   "bugs": {
-    "url": "https://github.com/jianshuo/cctime/issues"
+    "url": "https://github.com/jianshuo/cchour/issues"
   },
   "keywords": [
     "claude-code",

@@ -1,6 +1,6 @@
-# cctime
+# cchour
 
-See how much time you actually spend in AI coding tools. `cctime` scans the local
+See how much time you actually spend in AI coding tools. `cchour` scans the local
 session logs of **Claude Code** and **Codex**, computes your active hours, and
 renders a self-contained HTML report — daily, weekly and monthly stacked bars,
 hour-of-day distribution, work categories, and top projects.
@@ -10,22 +10,22 @@ Everything runs locally. Nothing is uploaded anywhere.
 ## Install
 
 ```bash
-npm i -g cctime
+npm i -g cchour
 ```
 
 Or run without installing:
 
 ```bash
-npx cctime
+npx cchour
 ```
 
 ## Usage
 
 ```bash
-cctime                    # writes ./cctime-report.html
-cctime --open             # ...and opens it in your browser
-cctime -o ~/report.html   # custom output path
-cctime --days 60          # daily chart window (default 30)
+cchour                    # writes ./cchour-report.html
+cchour --open             # ...and opens it in your browser
+cchour -o ~/report.html   # custom output path
+cchour --days 60          # daily chart window (default 30)
 ```
 
 ## Data sources
@@ -48,7 +48,7 @@ the union of all events of that tool, so parallel sessions are not double-counte
 ## Work categories
 
 Projects are mapped to categories by ordered keyword rules. To customize, create
-`~/.cctime/categories.json`:
+`~/.cchour/categories.json`:
 
 ```json
 [
