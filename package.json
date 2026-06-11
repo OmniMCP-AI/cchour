@@ -1,0 +1,36 @@
+{
+  "name": "cctime",
+  "version": "1.0.0",
+  "description": "See how much time you actually spend in AI coding tools (Claude Code / Codex) — generates a local HTML report from session logs",
+  "bin": {
+    "cctime": "bin/cctime.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node bin/cctime.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jianshuo/cctime.git"
+  },
+  "homepage": "https://github.com/jianshuo/cctime#readme",
+  "bugs": {
+    "url": "https://github.com/jianshuo/cctime/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "time-tracking",
+    "report",
+    "cli",
+    "ai-coding",
+    "analytics"
+  ],
+  "author": "Jian Shuo Wang <jianshuo@hotmail.com>",
+  "license": "MIT"
+}
