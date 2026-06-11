@@ -2,12 +2,12 @@
 
 # TODO 迭代 5（2026-06-11）— npm 发布收尾 + 杂项会话内容级分类
 
-- [ ] 1. 确认 npm 发布成功：registry 上已有 cchour@1.1.0，用 `npx cchour@1.1.0 --version` 验证可安装可运行
-- [ ] 2. 杂项（根目录会话）内容级分类：读会话首条用户消息，按关键词归入已有分类，降低「杂项」占比
-- [ ] 3. 本地运行验证：总时长数字不变（分类不影响间隔法统计），杂项占比明显下降，截图核对
-- [ ] 4. 版本 bump 1.2.0，README 同步，commit + push
-- [ ] 5. npm publish 1.2.0（若再卡 2FA OTP，留指令给用户）
-- [ ] 6. 更新 STATE.md / TODO.md
+- [x] 1. 确认 npm 发布成功：registry 上已有 cchour@1.1.0（用户已用 OTP 发布），`npx cchour@1.1.0 --version` 验证通过
+- [x] 2. 杂项（根目录会话）内容级分类：规则格式加可选第三个数组（内容关键词），读会话首条用户消息匹配；~/.cchour/categories.json 已补 8 类内容关键词
+- [x] 3. 本地运行验证：总量 228.5h/13.9h 正常（含当日新数据），杂项占比 48% → 29%（128.1h → 82.0h），截图核对渲染正常
+- [x] 4. 版本 bump 1.2.0，README 补内容级分类说明，commit + push
+- [x] 5. npm publish 1.2.0 — 仍卡 2FA：请在项目目录跑 `npm publish --access public --otp=<验证码>`（留给用户，与 1.1.0 时相同）
+- [x] 6. 更新 STATE.md / TODO.md
 
 # TODO 迭代 4（2026-06-11）— 按更新后的 CLAUDE.md 改名 cctime → cchour
 
