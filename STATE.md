@@ -1,13 +1,14 @@
-# STATE — cctime 项目状态
+# STATE — cchour 项目状态（原名 cctime）
 
-## 当前状态（迭代 3 完成，2026-06-11）
+## 当前状态（迭代 4 完成，2026-06-11）
 
-Node.js 零依赖 CLI，**v1.1.0**，已对齐需求规格：
+Node.js 零依赖 CLI，**v1.1.0**，命令行已按更新后的 CLAUDE.md 改名 **cchour**：
 
-- 代码：`bin/cctime.js`（单文件，零依赖，Node ≥ 18）
-- GitHub：https://github.com/jianshuo/cctime （public，main 分支）
-- npm：**尚未发布** —— publish 卡在 npm 2FA OTP（迭代 2、3 各试一次均 EOTP），等用户跑 `npm publish --otp=<验证码>`
-- 迭代 3 改动：GAP 300→900 秒（需求定义是 15 分钟）；新增每周（12 周，周一起点）/ 每月（12 个月）堆叠图；README 同步
+- 代码：`bin/cchour.js`（单文件，零依赖，Node ≥ 18）
+- GitHub：https://github.com/jianshuo/cchour （public，main；原 cctime URL 自动跳转）
+- npm：**尚未发布** —— publish 一直卡在 npm 2FA OTP（EOTP），等用户在项目目录跑 `npm publish --access public --otp=<验证码>`；包名 cchour 已确认可用
+- 迭代 3 改动：GAP 300→900 秒（需求定义是 15 分钟）；新增每周（12 周，周一起点）/ 每月（12 个月）堆叠图
+- 迭代 4 改动：cctime → cchour 全量改名（包名/bin/配置目录/默认输出名/文档）；个人分类配置已复制到 ~/.cchour/categories.json；本地项目目录仍叫 ~/code/products/cctime
 
 ## 用法
 

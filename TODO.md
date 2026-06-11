@@ -2,12 +2,12 @@
 
 # TODO 迭代 4（2026-06-11）— 按更新后的 CLAUDE.md 改名 cctime → cchour
 
-- [ ] 1. 确认 npm 包名 `cchour` 可用
-- [ ] 2. 改名：package.json（name/bin）、bin/cchour.js、README、HTML footer、默认输出文件名、.gitignore
-- [ ] 3. 本地运行验证 + `--version` `--help`
-- [ ] 4. commit + push；GitHub 仓库改名 cctime → cchour（旧 URL 自动跳转）
-- [ ] 5. npm publish cchour（仍需用户 OTP）
-- [ ] 6. 更新 STATE.md / TODO.md
+- [x] 1. 确认 npm 包名 `cchour` 可用（E404，未被占用）
+- [x] 2. 改名：package.json（name/bin）、bin/cchour.js、README、HTML footer、默认输出文件名、.gitignore；个人配置已复制 ~/.cctime/categories.json → ~/.cchour/
+- [x] 3. 本地运行验证：`cchour --version` = 1.1.0，报表数字与迭代 3 一致（228.1h / 13.9h）
+- [x] 4. commit + push；GitHub 仓库已改名 → https://github.com/jianshuo/cchour（旧 URL 自动跳转，本地 remote 已更新）
+- [ ] 5. npm publish cchour — **唯一剩余事项，卡在 2FA**：请在项目目录跑 `npm publish --access public --otp=<验证码>`
+- [x] 6. 更新 STATE.md / TODO.md
 
 ## 迭代 3（2026-06-11）— 对齐需求规格
 
