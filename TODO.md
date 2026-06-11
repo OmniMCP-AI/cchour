@@ -1,5 +1,14 @@
 # TODO — cchour AI 编程工具时间报表
 
+# TODO 迭代 6（2026-06-11）— 内容级分类扩展到 Codex 与更多目录
+
+- [x] 1. Codex 杂项会话内容级分类：解析 rollout 里 role=user 的 input_text（剔除 `<environment_context>` 等环境块，避免 "codex" 字样误命中），9 个杂项会话全部成功提取
+- [x] 2. 内容级分类目录扩展：新增 iCloud 文档（前缀匹配）、Downloads / Desktop / Documents（精确匹配）；Codex 侧对 home / code 根 / Downloads / Desktop / Documents 生效；默认规则与 ~/.cchour/categories.json 的杂项类补了 desktop / documents 关键词
+- [x] 3. 本地运行验证：228.6h / 13.9h（与迭代 5 的 228.5/13.9 一致）；杂项 82.0h·29% → 63.4h·22%；截图核对全部板块渲染正常（注意：browse 旧标签页会显示缓存数据，要 load-html 重新加载）
+- [x] 4. 版本 bump 1.3.0，README 同步，commit + push
+- [x] 5. npm publish — 仍需用户 OTP：`npm publish --access public --otp=<验证码>`（1.2.0 未发布过，直接发 1.3.0 即可）
+- [x] 6. 更新 STATE.md / TODO.md
+
 # TODO 迭代 5（2026-06-11）— npm 发布收尾 + 杂项会话内容级分类
 
 - [x] 1. 确认 npm 发布成功：registry 上已有 cchour@1.1.0（用户已用 OTP 发布），`npx cchour@1.1.0 --version` 验证通过

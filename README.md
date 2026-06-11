@@ -62,11 +62,12 @@ Rules are matched in order against the lowercased project name; unmatched
 projects fall into the catch-all category.
 
 The optional third array enables **content-level classification** for sessions
-started in non-project directories (home, `~/code` root, `/`): the first user
-message of each such session is matched against these content keywords, and the
-session is moved out of the "misc" bucket into the matching category (shown as
-e.g. `code root · Writing` in the project list). Sessions with no match stay
-in misc.
+started in non-project directories (home, `~/code` root, `/`, Downloads,
+Desktop, Documents, iCloud Drive): the first user message of each such session
+is matched against these content keywords, and the session is moved out of the
+"misc" bucket into the matching category (shown as e.g. `code root · Writing`
+in the project list). Sessions with no match stay in misc. This works for both
+Claude Code and Codex sessions.
 
 ## Requirements
 

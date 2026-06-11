@@ -68,6 +68,17 @@ const SPECIAL_DIRS = {
   '-private-tmp': '临时目录',
 };
 
+// 这些目录下的会话不属于具体项目，按会话首条用户消息做内容级分类
+function isMiscClaudeDir(dirname) {
+  if (SPECIAL_DIRS[dirname]) return true;
+  if (dirname.startsWith(`${FH}-Library-Mobile-Documents`)) return true; // iCloud 文档
+  return [`${FH}-Downloads`, `${FH}-Desktop`, `${FH}-Documents`].includes(dirname);
+}
+
+const CODEX_MISC_PROJECTS = new Set([
+  'home 目录（杂项）', 'code 根目录（杂项）', 'Downloads', 'Desktop', 'Documents',
+]);
+
 function claudeProjectName(dirname) {
   if (SPECIAL_DIRS[dirname]) return SPECIAL_DIRS[dirname];
   if (dirname.startsWith(`${FH}-Library-Mobile-Documents`)) return 'iCloud 文档';
@@ -93,18 +104,21 @@ function claudeProjectName(dirname) {
   return p || 'home';
 }
 
-function codexProjectName(file) {
-  // session_meta 在首行但可能超长，直接在文件头 256KB 里正则取第一个 cwd
-  let head;
+// 读文件头 256KB（session 元信息和首条用户消息都在这里）
+function readHead(file) {
   try {
     const fd = fs.openSync(file, 'r');
     const buf = Buffer.allocUnsafe(256 * 1024);
     const n = fs.readSync(fd, buf, 0, buf.length, 0);
     fs.closeSync(fd);
-    head = buf.toString('utf8', 0, n);
+    return buf.toString('utf8', 0, n);
   } catch {
-    return 'unknown';
+    return '';
   }
+}
+
+function codexProjectName(head) {
+  // session_meta 在首行但可能超长，直接在文件头里正则取第一个 cwd
   const m = head.match(/"cwd"\s*:\s*"([^"]+)"/);
   if (!m) return 'unknown';
   const cwd = m[1].replace(/\/+$/, '');
@@ -137,7 +151,7 @@ const DEFAULT_CATEGORIES = [
   ['技能与工具链',
     ['skill', 'claude-code', 'claude-logs', 'memory', 'agents', '.claude', 'tmp', 'tool'],
     ['skill', 'mcp', 'plugin', '插件', '记忆', 'claude code', 'codex']],
-  ['杂项（根目录会话）', ['杂项', 'downloads', 'icloud', '临时']],
+  ['杂项（根目录会话）', ['杂项', 'downloads', 'desktop', 'documents', 'icloud', '临时']],
   ['基础设施',
     ['infra', 'dns', 'cloudflare', 'server', 'backup', 'deploy'],
     ['cloudflare', 'dns', '服务器', '部署', 'deploy', '备份', 'backup', '代理', 'proxy', '网盘', 'launchd']],
@@ -182,17 +196,7 @@ function makeContentCategorize(rules) {
 }
 
 // 取 Claude Code 会话首条真实用户消息的文本（头 256KB 内逐行解析）
-function firstUserText(file) {
-  let head;
-  try {
-    const fd = fs.openSync(file, 'r');
-    const buf = Buffer.allocUnsafe(256 * 1024);
-    const n = fs.readSync(fd, buf, 0, buf.length, 0);
-    fs.closeSync(fd);
-    head = buf.toString('utf8', 0, n);
-  } catch {
-    return '';
-  }
+function firstUserText(head) {
   for (const line of head.split('\n')) {
     let j;
     try {
@@ -209,6 +213,37 @@ function firstUserText(file) {
         : '';
     t = t.replace(/<[^>]*>/g, ' ').trim();
     if (!t || t.startsWith('Caveat:')) continue;
+    return t.slice(0, 2000);
+  }
+  return '';
+}
+
+// 取 Codex 会话首条真实用户输入（rollout 格式：response_item payload 里
+// role=user 的 input_text）。首条往往是 <environment_context> 环境信息，
+// 文本里含 "codex" 等字样会误命中内容关键词，需整块剔除后再判断。
+function codexFirstUserText(head) {
+  for (const line of head.split('\n')) {
+    let j;
+    try {
+      j = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const p = j && j.payload;
+    if (!p) continue;
+    let t = '';
+    if (j.type === 'response_item' && p.type === 'message' && p.role === 'user' && Array.isArray(p.content)) {
+      t = p.content.filter((x) => x && x.type === 'input_text').map((x) => x.text).join(' ');
+    } else if (j.type === 'event_msg' && p.type === 'user_message' && typeof p.message === 'string') {
+      t = p.message;
+    } else {
+      continue;
+    }
+    t = t
+      .replace(/<(environment_context|user_instructions|turn_context)>[\s\S]*?<\/\1>/g, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .trim();
+    if (!t) continue;
     return t.slice(0, 2000);
   }
   return '';
@@ -311,13 +346,13 @@ function collect(contentCategorize) {
       const full = path.join(CLAUDE_DIR, d);
       if (!isDir(full)) continue;
       const proj = claudeProjectName(d);
-      const isMisc = Boolean(SPECIAL_DIRS[d]);
+      const isMisc = isMiscClaudeDir(d);
       for (const fn of fs.readdirSync(full)) {
         if (!fn.endsWith('.jsonl')) continue;
         const file = path.join(full, fn);
         let p = proj;
         if (isMisc) {
-          const cat = contentCategorize(firstUserText(file));
+          const cat = contentCategorize(firstUserText(readHead(file)));
           if (cat) {
             p = `${proj.replace('（杂项）', '')} · ${cat}`;
             catOverride.set(p, cat);
@@ -330,8 +365,17 @@ function collect(contentCategorize) {
 
   for (const rootDir of CODEX_DIRS) {
     walkJsonl(rootDir, (file) => {
-      const proj = codexProjectName(file);
-      scanTimestamps(file, bucket('Codex', proj));
+      const head = readHead(file);
+      const proj = codexProjectName(head);
+      let p = proj;
+      if (CODEX_MISC_PROJECTS.has(proj)) {
+        const cat = contentCategorize(codexFirstUserText(head));
+        if (cat) {
+          p = `${proj.replace('（杂项）', '')} · ${cat}`;
+          catOverride.set(p, cat);
+        }
+      }
+      scanTimestamps(file, bucket('Codex', p));
     });
   }
 
