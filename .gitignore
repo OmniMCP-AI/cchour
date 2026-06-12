@@ -4,3 +4,5 @@ cchour-report.html
 *.log
 .DS_Store
 .gstack/
+.env
+.envrc

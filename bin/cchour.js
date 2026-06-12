@@ -35,6 +35,215 @@ const FH = HOME.replace(/[/.]/g, '-');
 
 const TS_RE = /"timestamp"\s*:\s*"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/g;
 
+const I18N = {
+  cn: {
+    htmlLang: 'zh-CN',
+    appTitle: 'AI 编程工具时间报表',
+    generatedAt: '生成于',
+    rangeLabel: '统计范围',
+    allData: '全部数据',
+    clippedNote: '数据已按命令行参数截取',
+    dataFrom: '数据来自本机 Claude Code 与 Codex 会话记录',
+    activeFormula: '活跃时长 = 相邻操作间隔 ≤ 15 分钟的累计',
+    controls: {
+      all: '全部',
+      today: '今天',
+      week: '本周',
+      lastweek: '上周',
+      month: '本月',
+      lastmonth: '上月',
+      d7: '近 7 天',
+      d30: '近 30 天',
+      d90: '近 90 天',
+      custom: '自定义',
+    },
+    headings: {
+      daily: '最近 {n} 天每日使用',
+      weekly: '最近 {n} 周每周使用（以周一为起点）',
+      monthly: '最近 {n} 个月每月使用',
+      hourly: '一天中的时间分布（24 小时）',
+      categories: '工作分类',
+      projects: '项目时长 Top 20',
+    },
+    cards: {
+      total: '总活跃时长',
+      hours: '小时',
+      share: '占比',
+      dailyAvg: '日均',
+      days: '天',
+    },
+    units: {
+      hours: '小时',
+      minutes: '分钟',
+      latest: '最近',
+      none: '该时间段没有数据',
+      earliest: '最早',
+      today: '今天',
+    },
+    footer: 'cchour · 全部数据在本机统计，未上传任何服务 · 时间范围切换在浏览器内完成',
+    projectsRecent: '最近',
+    helpTitle: 'AI 编程工具时间报表 (Claude Code / Codex)',
+    helpUsage: '用法: cchour [选项]',
+    helpOptions: '选项:',
+    helpUnknownArg: '未知参数',
+    helpMissingOutput: '缺少 --output 的值',
+    helpDateFmt: '需要 YYYY-MM-DD 格式的日期，收到:',
+    helpMonthFmt: '--month 需要 last 或 YYYY-MM 格式，收到:',
+    helpFutureRange: '指定的范围在未来，没有数据',
+    helpSinceAfterUntil: '--since 不能晚于 --until',
+    helpWeekMonthConflict: '--week 与 --month 不能同时使用',
+    helpShortcutConflict: '不能与 --since/--until 同时使用',
+    statusScanning: '扫描数据源…',
+    statusProjects: '个项目',
+    statusEvents: '个事件',
+    statusGenerated: '已生成',
+    statusElapsed: '耗时',
+    sec: '秒',
+    other: '其他',
+    miscSuffix: '（杂项）',
+    special: {
+      codeRootMisc: 'code 根目录（杂项）',
+      homeMisc: 'home 目录（杂项）',
+      rootMisc: '根目录（杂项）',
+      tempDir: '临时目录',
+      iCloud: 'iCloud 文档',
+      home: 'home',
+      unknown: 'unknown',
+      downloads: 'Downloads',
+      desktop: 'Desktop',
+      documents: 'Documents',
+    },
+    defaultCategories: {
+      writing: '写作与发布',
+      video: '视频制作',
+      website: '网站维护',
+      skills: '技能与工具链',
+      product: '产品研发',
+      data: '数据与表格',
+      browser: '浏览器自动化',
+      finance: '金融与分析',
+      vision: '视觉与多媒体',
+      platform: '平台集成',
+      misc: '杂项（根目录会话）',
+      infra: '基础设施',
+    },
+    llm: {
+      missingApiKey: '启用 --llm-category 需要环境变量 OPENAI_API_KEY',
+      missingModel: '启用 --llm-category 需要 --llm-model 或环境变量 CCHOUR_LLM_MODEL',
+      classifying: '使用 LLM 改进分类映射…',
+      summary: 'LLM 已重分类 {projects} 个项目，新增/使用 {categories} 个分类',
+      otherSummary: '当前“其他”仍有 {projects} 个项目，共 {hours} 小时。前几个：{top}',
+    },
+  },
+  en: {
+    htmlLang: 'en',
+    appTitle: 'AI Coding Time Report',
+    generatedAt: 'Generated',
+    rangeLabel: 'Range',
+    allData: 'All data',
+    clippedNote: 'Data was clipped by CLI range',
+    dataFrom: 'Data comes from local Claude Code and Codex session logs',
+    activeFormula: 'Active time = accumulated gaps between actions <= 15 minutes',
+    controls: {
+      all: 'All',
+      today: 'Today',
+      week: 'This week',
+      lastweek: 'Last week',
+      month: 'This month',
+      lastmonth: 'Last month',
+      d7: 'Last 7 days',
+      d30: 'Last 30 days',
+      d90: 'Last 90 days',
+      custom: 'Custom',
+    },
+    headings: {
+      daily: 'Daily usage for the last {n} days',
+      weekly: 'Weekly usage for the last {n} weeks (Mon-based)',
+      monthly: 'Monthly usage for the last {n} months',
+      hourly: 'Hour-of-day distribution (24h)',
+      categories: 'Work categories',
+      projects: 'Top 20 projects by time',
+    },
+    cards: {
+      total: 'Total active time',
+      hours: 'hours',
+      share: 'Share',
+      dailyAvg: 'Daily avg',
+      days: 'days',
+    },
+    units: {
+      hours: 'hours',
+      minutes: 'minutes',
+      latest: 'latest',
+      none: 'No data in this range',
+      earliest: 'earliest',
+      today: 'today',
+    },
+    footer: 'cchour · all stats are computed locally · nothing is uploaded · range switching happens in the browser',
+    projectsRecent: 'latest',
+    helpTitle: 'AI coding time report (Claude Code / Codex)',
+    helpUsage: 'Usage: cchour [options]',
+    helpOptions: 'Options:',
+    helpUnknownArg: 'Unknown argument',
+    helpMissingOutput: 'Missing value for --output',
+    helpDateFmt: 'expects a date in YYYY-MM-DD format, got:',
+    helpMonthFmt: '--month expects last or YYYY-MM, got:',
+    helpFutureRange: 'the selected range is in the future, no data to show',
+    helpSinceAfterUntil: '--since must not be later than --until',
+    helpWeekMonthConflict: '--week and --month cannot be used together',
+    helpShortcutConflict: 'cannot be combined with --since/--until',
+    statusScanning: 'Scanning data sources...',
+    statusProjects: 'projects',
+    statusEvents: 'events',
+    statusGenerated: 'Generated',
+    statusElapsed: 'Elapsed',
+    sec: 's',
+    other: 'Other',
+    miscSuffix: ' (misc)',
+    special: {
+      codeRootMisc: 'code root (misc)',
+      homeMisc: 'home (misc)',
+      rootMisc: 'root (misc)',
+      tempDir: 'temp directory',
+      iCloud: 'iCloud Drive',
+      home: 'home',
+      unknown: 'unknown',
+      downloads: 'Downloads',
+      desktop: 'Desktop',
+      documents: 'Documents',
+    },
+    defaultCategories: {
+      writing: 'Writing & Publishing',
+      video: 'Video Production',
+      website: 'Website Maintenance',
+      skills: 'Skills & Tooling',
+      product: 'Product Engineering',
+      data: 'Data & Spreadsheets',
+      browser: 'Browser Automation',
+      finance: 'Finance & Analytics',
+      vision: 'Vision & Media',
+      platform: 'Platform Integrations',
+      misc: 'Misc (root sessions)',
+      infra: 'Infrastructure',
+    },
+    llm: {
+      missingApiKey: '--llm-category requires OPENAI_API_KEY',
+      missingModel: '--llm-category requires --llm-model or CCHOUR_LLM_MODEL',
+      classifying: 'Using LLM to improve category mapping...',
+      summary: 'LLM reclassified {projects} projects across {categories} categories',
+      otherSummary: 'Other still has {projects} projects totaling {hours} hours. Top few: {top}',
+    },
+  },
+};
+
+function tr(lang) {
+  return I18N[lang] || I18N.cn;
+}
+
+function fill(s, vars) {
+  return s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] == null ? '' : String(vars[k])));
+}
+
 function scanTimestamps(file, out) {
   let fd;
   try {
@@ -61,27 +270,32 @@ function scanTimestamps(file, out) {
   }
 }
 
-const SPECIAL_DIRS = {
-  [`${FH}-code`]: 'code 根目录（杂项）',
-  [FH]: 'home 目录（杂项）',
-  '-': '根目录（杂项）',
-  '-private-tmp': '临时目录',
-};
+function getSpecialDirs(t) {
+  return {
+    [`${FH}-code`]: t.special.codeRootMisc,
+    [FH]: t.special.homeMisc,
+    '-': t.special.rootMisc,
+    '-private-tmp': t.special.tempDir,
+  };
+}
 
 // 这些目录下的会话不属于具体项目，按会话首条用户消息做内容级分类
 function isMiscClaudeDir(dirname) {
-  if (SPECIAL_DIRS[dirname]) return true;
+  if (dirname in getSpecialDirs(tr('cn'))) return true;
   if (dirname.startsWith(`${FH}-Library-Mobile-Documents`)) return true; // iCloud 文档
   return [`${FH}-Downloads`, `${FH}-Desktop`, `${FH}-Documents`].includes(dirname);
 }
 
-const CODEX_MISC_PROJECTS = new Set([
-  'home 目录（杂项）', 'code 根目录（杂项）', 'Downloads', 'Desktop', 'Documents',
-]);
+function codeMiscProjects(t) {
+  return new Set([
+    t.special.homeMisc, t.special.codeRootMisc, t.special.downloads, t.special.desktop, t.special.documents,
+  ]);
+}
 
-function claudeProjectName(dirname) {
-  if (SPECIAL_DIRS[dirname]) return SPECIAL_DIRS[dirname];
-  if (dirname.startsWith(`${FH}-Library-Mobile-Documents`)) return 'iCloud 文档';
+function claudeProjectName(dirname, t) {
+  const specialDirs = getSpecialDirs(t);
+  if (specialDirs[dirname]) return specialDirs[dirname];
+  if (dirname.startsWith(`${FH}-Library-Mobile-Documents`)) return t.special.iCloud;
   let p = dirname;
   const prefixes = [
     `${FH}-code-products-`,
@@ -101,7 +315,7 @@ function claudeProjectName(dirname) {
   }
   // worktree 归并到主项目
   p = p.replace(/--claude-worktrees.*$/, '');
-  return p || 'home';
+  return p || t.special.home;
 }
 
 // 读文件头 256KB（session 元信息和首条用户消息都在这里）
@@ -117,47 +331,72 @@ function readHead(file) {
   }
 }
 
-function codexProjectName(head) {
+function codexProjectName(head, t) {
   // session_meta 在首行但可能超长，直接在文件头里正则取第一个 cwd
   const m = head.match(/"cwd"\s*:\s*"([^"]+)"/);
-  if (!m) return 'unknown';
+  if (!m) return t.special.unknown;
   const cwd = m[1].replace(/\/+$/, '');
-  if (cwd === HOME) return 'home 目录（杂项）';
+  if (cwd === HOME) return t.special.homeMisc;
   const codeRoot = path.join(HOME, 'code');
-  if (cwd === codeRoot) return 'code 根目录（杂项）';
+  if (cwd === codeRoot) return t.special.codeRootMisc;
   if (cwd.startsWith(codeRoot + '/')) {
     const rel = cwd.slice(codeRoot.length + 1).split('/');
     // ~/code/products/foo 取 foo，其余取第一段
     if (rel[0] === 'products' && rel.length > 1) return rel[1];
     return rel[0];
   }
-  return path.basename(cwd) || 'home';
+  return path.basename(cwd) || t.special.home;
 }
 
 // 默认分类规则；可用 ~/.cchour/categories.json 覆盖，
 // 格式: [["分类名", ["项目名关键词", ...], ["内容关键词", ...]?], ...]
 // 第二个数组按顺序匹配项目名（小写包含）；可选的第三个数组用于杂项目录会话的
 // 内容级分类——匹配会话首条用户消息，命中则把该会话从「杂项」挪进对应分类。
-const DEFAULT_CATEGORIES = [
-  ['写作与发布',
+const DEFAULT_CATEGORY_RULES = [
+  ['writing',
     ['wechat', 'publish', 'hugo', 'blog', 'article', 'tweet', 'newsletter', 'syndicat'],
     ['公众号', '文章', '博客', '润色', '推文', 'tweet', 'blog', 'newsletter']],
-  ['视频制作',
+  ['video',
     ['video', 'multicam', 'dub', 'subtitle', 'overlay', 'transcrib', 'podcast', 'youtube', 'audio'],
     ['视频', '字幕', '配音', '剪辑', '转写', 'srt', 'video', 'youtube', '音频']],
-  ['网站维护',
+  ['website',
     ['website', 'site'],
     ['网站', 'website', 'seo', '域名']],
-  ['技能与工具链',
+  ['skills',
     ['skill', 'claude-code', 'claude-logs', 'memory', 'agents', '.claude', 'tmp', 'tool'],
     ['skill', 'mcp', 'plugin', '插件', '记忆', 'claude code', 'codex']],
-  ['杂项（根目录会话）', ['杂项', 'downloads', 'desktop', 'documents', 'icloud', '临时']],
-  ['基础设施',
+  ['data',
+    ['excelize', 'sheet', 'table', 'kingdee', 'dagster', 'data-export', 'maibei', 'bi', 'spreadsheet', 'workbook'],
+    ['excel', 'sheet', 'table', 'spreadsheet', '报表', '表格', '工作簿', 'data pipeline', 'dagster']],
+  ['browser',
+    ['browser', 'harness', 'hermes', 'cua', 'chrome-open', 'inspect-the-current-in-app-browser', 'captcha'],
+    ['browser', 'chrome', 'playwright', '自动化', '网页', '抓取', 'harness', 'agent']],
+  ['finance',
+    ['btc', 'portfolio', 'financial', 'fin-', 'trading', 'quant'],
+    ['btc', 'finance', 'portfolio', 'trading', '量化', '金融', '股票', 'crypto']],
+  ['vision',
+    ['camera', 'cv2', 'cv', 'image-generation', 'multica', 'contentcreator', 'bfgf', 'video'],
+    ['图片', '图像', '视觉', 'camera', 'cv', 'image', 'multicam', '生成图像']],
+  ['platform',
+    ['shein', 'tiktok', 'shoppee', 'shopee', 'salesforce'],
+    ['电商', '店铺', '商品', '广告', 'shopee', 'tiktok', 'salesforce']],
+  ['product',
+    ['maybeai', 'app-factory', 'openclaw', 'claw', 'github', 'chat', 'apps', 'fastestai', 'teable', 'symphony', 'work-ai', 'work-github'],
+    ['产品', '功能', '需求', 'app', 'product', 'github repo']],
+  ['misc', ['杂项', 'downloads', 'desktop', 'documents', 'icloud', '临时', 'misc']],
+  ['infra',
     ['infra', 'dns', 'cloudflare', 'server', 'backup', 'deploy'],
     ['cloudflare', 'dns', '服务器', '部署', 'deploy', '备份', 'backup', '代理', 'proxy', '网盘', 'launchd']],
 ];
 
-function loadCategories() {
+function defaultCategoriesForLang(lang) {
+  const t = tr(lang);
+  return DEFAULT_CATEGORY_RULES.map(([id, projectKeys, contentKeys]) => [
+    t.defaultCategories[id], projectKeys, contentKeys,
+  ]);
+}
+
+function loadCategories(lang) {
   const p = path.join(HOME, '.cchour', 'categories.json');
   try {
     const rules = JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -165,7 +404,7 @@ function loadCategories() {
   } catch {
     /* 无配置文件时用默认规则 */
   }
-  return DEFAULT_CATEGORIES;
+  return defaultCategoriesForLang(lang);
 }
 
 function makeCategorize(rules) {
@@ -176,7 +415,7 @@ function makeCategorize(rules) {
         if (p.includes(k)) return cat;
       }
     }
-    return '其他';
+    return null;
   };
 }
 
@@ -256,6 +495,27 @@ function codexUserTexts(head) {
     if (texts.length >= CONTENT_MSGS) break;
   }
   return texts.join('\n');
+}
+
+function trimCategorySuffix(project, t) {
+  return project.replace(t.miscSuffix, '').trim();
+}
+
+function cleanCategoryName(name, fallback) {
+  const s = String(name || '').replace(/\s+/g, ' ').trim();
+  return s || fallback;
+}
+
+function addLlmCandidate(llmCandidates, key, next) {
+  if (!llmCandidates.has(key)) {
+    llmCandidates.set(key, { tool: next.tool, project: next.project, samples: [] });
+  }
+  const cur = llmCandidates.get(key);
+  for (const sample of next.samples || []) {
+    if (!sample || cur.samples.includes(sample)) continue;
+    cur.samples.push(sample);
+    if (cur.samples.length >= 2) break;
+  }
 }
 
 function uniqSorted(ts) {
@@ -338,11 +598,12 @@ function walkJsonl(dir, cb) {
   }
 }
 
-function collect(contentCategorize) {
+function collect(contentCategorize, t) {
   // tool -> Map(project -> [timestamps])
   const data = new Map();
   // 杂项会话经内容级分类拆出的合成项目名 -> 分类（覆盖按项目名的分类）
   const catOverride = new Map();
+  const llmCandidates = new Map();
   const bucket = (tool, proj) => {
     if (!data.has(tool)) data.set(tool, new Map());
     const m = data.get(tool);
@@ -354,17 +615,21 @@ function collect(contentCategorize) {
     for (const d of fs.readdirSync(CLAUDE_DIR).sort()) {
       const full = path.join(CLAUDE_DIR, d);
       if (!isDir(full)) continue;
-      const proj = claudeProjectName(d);
+      const proj = claudeProjectName(d, t);
       const isMisc = isMiscClaudeDir(d);
       for (const fn of fs.readdirSync(full)) {
         if (!fn.endsWith('.jsonl')) continue;
         const file = path.join(full, fn);
         let p = proj;
+        const head = isMisc ? readHead(file) : '';
         if (isMisc) {
-          const cat = contentCategorize(claudeUserTexts(readHead(file)));
+          const content = claudeUserTexts(head);
+          const cat = contentCategorize(content);
           if (cat) {
-            p = `${proj.replace('（杂项）', '')} · ${cat}`;
+            p = `${trimCategorySuffix(proj, t)} · ${cat}`;
             catOverride.set(p, cat);
+          } else if (content) {
+            addLlmCandidate(llmCandidates, `Claude Code\t${proj}`, { tool: 'Claude Code', project: proj, samples: [content] });
           }
         }
         scanTimestamps(file, bucket('Claude Code', p));
@@ -375,23 +640,34 @@ function collect(contentCategorize) {
   for (const rootDir of CODEX_DIRS) {
     walkJsonl(rootDir, (file) => {
       const head = readHead(file);
-      const proj = codexProjectName(head);
+      const proj = codexProjectName(head, t);
       let p = proj;
-      if (CODEX_MISC_PROJECTS.has(proj)) {
-        const cat = contentCategorize(codexUserTexts(head));
+      if (codeMiscProjects(t).has(proj)) {
+        const content = codexUserTexts(head);
+        const cat = contentCategorize(content);
         if (cat) {
-          p = `${proj.replace('（杂项）', '')} · ${cat}`;
+          p = `${trimCategorySuffix(proj, t)} · ${cat}`;
           catOverride.set(p, cat);
+        } else if (content) {
+          addLlmCandidate(llmCandidates, `Codex\t${proj}`, { tool: 'Codex', project: proj, samples: [content] });
         }
       }
       scanTimestamps(file, bucket('Codex', p));
     });
   }
 
-  return { data, catOverride };
+  for (const [tool, projects] of data) {
+    for (const [proj, ts] of projects) {
+      if (!ts.length || catOverride.has(proj)) continue;
+      const key = `${tool}\t${proj}`;
+      addLlmCandidate(llmCandidates, key, { tool, project: proj, samples: [] });
+    }
+  }
+
+  return { data, catOverride, llmCandidates };
 }
 
-function buildReport(data, categorize, catOverride, ndays, range = {}) {
+function buildReport(data, categorize, catOverride, ndays, range = {}, otherLabel = 'Other') {
   const toolSeconds = new Map();
   const toolDaily = new Map();
   const toolWeekly = new Map();
@@ -407,7 +683,7 @@ function buildReport(data, categorize, catOverride, ndays, range = {}) {
       if (!ts.length) continue;
       const sec = activeSeconds(ts);
       if (sec < 60) continue;
-      const cat = catOverride.get(proj) || categorize(proj);
+      const cat = catOverride.get(proj) || categorize(proj) || otherLabel;
       catSeconds.set(cat, (catSeconds.get(cat) || 0) + sec);
       let first = Infinity;
       let last = -Infinity;
@@ -474,21 +750,22 @@ function buildEmbedData({ toolSeconds, toolDaily, toolDayHour, projRows, range, 
   };
 }
 
-function renderHtml(report) {
+function renderHtml(report, lang) {
+  const t = tr(lang);
   const embed = buildEmbedData(report);
   // </script> 防注入：JSON 里的 < 转义后再嵌入
   const json = JSON.stringify(embed).replace(/</g, '\\u003c');
   const r = report.range;
   const clipNote = r && (r.since || r.until)
-    ? ` · 数据已按命令行参数截取 ${r.since || '最早'} ~ ${r.until || '今天'}`
+    ? ` · ${t.clippedNote} ${r.since || t.units.earliest} ~ ${r.until || t.units.today}`
     : '';
 
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${t.htmlLang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI 编程工具时间报表</title>
+<title>${t.appTitle}</title>
 <style>
   :root { --ink:#2c2c2c; --muted:#8a8a8a; --line:#ececec; --bg:#fafaf8; --card:#ffffff; }
   * { box-sizing:border-box; margin:0; padding:0; }
@@ -508,6 +785,7 @@ function renderHtml(report) {
   .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; }
   .chart { display:flex; align-items:flex-end; gap:3px; height:190px; }
   .bar { flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; min-width:0; }
+  .bar-top { font-size:10px; line-height:1; color:var(--muted); margin-bottom:5px; white-space:nowrap; }
   .bar-stack { width:100%; display:flex; flex-direction:column-reverse; border-radius:3px 3px 0 0; overflow:hidden; }
   .bar:hover .bar-stack { opacity:.75; }
   .bar-x { font-size:9px; color:var(--muted); margin-top:5px; white-space:nowrap;
@@ -536,20 +814,20 @@ function renderHtml(report) {
 </head>
 <body>
 <div class="wrap">
-  <h1>AI 编程工具时间报表</h1>
-  <div class="sub">生成于 ${embed.genTime} · <span id="range-label"></span>${clipNote} · 数据来自本机 Claude Code 与 Codex 会话记录 · 活跃时长 = 相邻操作间隔 ≤ 15 分钟的累计</div>
+  <h1>${t.appTitle}</h1>
+  <div class="sub">${t.generatedAt} ${embed.genTime} · <span id="range-label"></span>${clipNote} · ${t.dataFrom} · ${t.activeFormula}</div>
 
   <div class="controls">
-    <button class="chip" data-preset="all">全部</button>
-    <button class="chip" data-preset="today">今天</button>
-    <button class="chip" data-preset="week">本周</button>
-    <button class="chip" data-preset="lastweek">上周</button>
-    <button class="chip" data-preset="month">本月</button>
-    <button class="chip" data-preset="lastmonth">上月</button>
-    <button class="chip" data-preset="d7">近 7 天</button>
-    <button class="chip" data-preset="d30">近 30 天</button>
-    <button class="chip" data-preset="d90">近 90 天</button>
-    <span class="custom">自定义 <input type="date" id="d-since"> ~ <input type="date" id="d-until"></span>
+    <button class="chip" data-preset="all">${t.controls.all}</button>
+    <button class="chip" data-preset="today">${t.controls.today}</button>
+    <button class="chip" data-preset="week">${t.controls.week}</button>
+    <button class="chip" data-preset="lastweek">${t.controls.lastweek}</button>
+    <button class="chip" data-preset="month">${t.controls.month}</button>
+    <button class="chip" data-preset="lastmonth">${t.controls.lastmonth}</button>
+    <button class="chip" data-preset="d7">${t.controls.d7}</button>
+    <button class="chip" data-preset="d30">${t.controls.d30}</button>
+    <button class="chip" data-preset="d90">${t.controls.d90}</button>
+    <span class="custom">${t.controls.custom} <input type="date" id="d-since"> ~ <input type="date" id="d-until"></span>
   </div>
 
   <div class="cards" id="cards"></div>
@@ -572,19 +850,19 @@ function renderHtml(report) {
     <div class="legend" id="legend-monthly"></div>
   </div>
 
-  <h2>一天中的时间分布（24 小时）</h2>
+  <h2>${t.headings.hourly}</h2>
   <div class="panel hourchart">
     <div class="chart" id="chart-hourly" style="height:150px"></div>
     <div class="legend" id="legend-hourly"></div>
   </div>
 
-  <h2>工作分类</h2>
+  <h2>${t.headings.categories}</h2>
   <div class="panel" id="cats"></div>
 
-  <h2>项目时长 Top 20</h2>
+  <h2>${t.headings.projects}</h2>
   <div class="panel" id="projects"></div>
 
-  <footer>cchour · 全部数据在本机统计，未上传任何服务 · 时间范围切换在浏览器内完成</footer>
+  <footer>${t.footer}</footer>
 </div>
 
 <script type="application/json" id="cchour-data">${json}</script>
@@ -592,13 +870,22 @@ function renderHtml(report) {
 'use strict';
 /* 范围切换全部在前端完成：按「日桶归属」对内嵌的按日数据求和。 */
 var D = JSON.parse(document.getElementById('cchour-data').textContent);
+var T = ${JSON.stringify(t).replace(/</g, '\\u003c')};
 var TOOL_COLORS = { 'Claude Code': '#D97757', 'Codex': '#4A7DBE' };
 var CAT_COLORS = ['#D97757', '#4A7DBE', '#5BA88B', '#C9A227', '#9B7BB8', '#D86F8C', '#8A9BA8'];
 var TOOLS = Object.keys(D.tools);
 
 function pad2(n) { return (n < 10 ? '0' : '') + n; }
 function hrs(sec) { var h = sec / 3600; return h >= 100 ? h.toFixed(0) : h.toFixed(1); }
-function fmtH(sec) { var h = sec / 3600; return h >= 1 ? h.toFixed(1) + ' 小时' : Math.round(sec / 60) + ' 分钟'; }
+function fmt(s, vars) { return s.replace(/\\{(\\w+)\\}/g, function (_, k) { return vars[k] == null ? '' : String(vars[k]); }); }
+function fmtH(sec) { var h = sec / 3600; return h >= 1 ? h.toFixed(1) + ' ' + T.units.hours : Math.round(sec / 60) + ' ' + T.units.minutes; }
+function fmtBar(sec) {
+  if (sec <= 0) return '';
+  var h = sec / 3600;
+  if (h >= 10) return h.toFixed(0) + 'h';
+  if (h >= 1) return h.toFixed(1) + 'h';
+  return Math.round(sec / 60) + 'm';
+}
 function color(t) { return TOOL_COLORS[t] || '#888'; }
 function dayStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
 function parseDay(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
@@ -625,8 +912,9 @@ function stackedBars(keys, tools, valFn, labelFn, height) {
       var h = (v / max) * height;
       if (h > 0.5) segs += '<div class="seg" style="height:' + h.toFixed(1) + 'px;background:' + color(tools[t]) + '"></div>';
     }
+    var label = fmtBar(totals[i]);
     html += '<div class="bar" title="' + keys[i] + ' · ' + (totals[i] / 3600).toFixed(1) + 'h">' +
-      '<div class="bar-stack">' + segs + '</div><div class="bar-x">' + labelFn(keys[i]) + '</div></div>';
+      '<div class="bar-top">' + label + '</div><div class="bar-stack">' + segs + '</div><div class="bar-x">' + labelFn(keys[i]) + '</div></div>';
   }
   return html;
 }
@@ -643,17 +931,17 @@ function render() {
   var spanDays = Math.max(1, Math.round((parseDay(end) - parseDay(start)) / 86400000) + 1);
 
   document.getElementById('range-label').textContent =
-    (lo || hi) ? '统计范围 ' + (lo || '最早') + ' ~ ' + (hi || '今天') : '统计范围 全部数据';
+    (lo || hi) ? T.rangeLabel + ' ' + (lo || T.units.earliest) + ' ~ ' + (hi || T.units.today) : T.rangeLabel + ' ' + T.allData;
 
   // 总览卡片
-  var cards = '<div class="card"><div class="card-label">总活跃时长</div>' +
-    '<div class="card-value">' + hrs(total) + '<span class="unit">小时</span></div>' +
-    '<div class="card-sub">' + start + ' ~ ' + end + ' · ' + spanDays + ' 天</div></div>';
+  var cards = '<div class="card"><div class="card-label">' + T.cards.total + '</div>' +
+    '<div class="card-value">' + hrs(total) + '<span class="unit">' + T.cards.hours + '</span></div>' +
+    '<div class="card-sub">' + start + ' ~ ' + end + ' · ' + spanDays + ' ' + T.cards.days + '</div></div>';
   tools.forEach(function (t) {
     var pct = total ? (toolSec[t] / total) * 100 : 0;
     cards += '<div class="card"><div class="card-label"><span class="dot" style="background:' + color(t) + '"></span>' + t + '</div>' +
-      '<div class="card-value">' + hrs(toolSec[t]) + '<span class="unit">小时</span></div>' +
-      '<div class="card-sub">占比 ' + pct.toFixed(0) + '% · 日均 ' + (toolSec[t] / 3600 / spanDays).toFixed(1) + ' 小时</div></div>';
+      '<div class="card-value">' + hrs(toolSec[t]) + '<span class="unit">' + T.cards.hours + '</span></div>' +
+      '<div class="card-sub">' + T.cards.share + ' ' + pct.toFixed(0) + '% · ' + T.cards.dailyAvg + ' ' + (toolSec[t] / 3600 / spanDays).toFixed(1) + ' ' + T.cards.hours + '</div></div>';
   });
   document.getElementById('cards').innerHTML = cards;
 
@@ -672,7 +960,7 @@ function render() {
     if (ds < start) continue;
     days.push(ds);
   }
-  document.getElementById('h-daily').textContent = '最近 ' + days.length + ' 天每日使用';
+  document.getElementById('h-daily').textContent = fmt(T.headings.daily, { n: days.length });
   document.getElementById('chart-daily').innerHTML = stackedBars(days, tools, function (t, k) {
     return D.tools[t].daily[k] || 0;
   }, function (k) { return k.slice(5).replace('-', '/'); }, 160);
@@ -697,7 +985,7 @@ function render() {
     if (wkk < startWeek) continue;
     weeks.push(wkk);
   }
-  document.getElementById('h-weekly').textContent = '最近 ' + weeks.length + ' 周每周使用（以周一为起点）';
+  document.getElementById('h-weekly').textContent = fmt(T.headings.weekly, { n: weeks.length });
   document.getElementById('chart-weekly').innerHTML = stackedBars(weeks, tools, function (t, k) {
     return wkByTool[t][k] || 0;
   }, function (k) { return k.slice(5).replace('-', '/'); }, 150);
@@ -709,7 +997,7 @@ function render() {
     if (mk2 < startMonth) continue;
     months.push(mk2);
   }
-  document.getElementById('h-monthly').textContent = '最近 ' + months.length + ' 个月每月使用';
+  document.getElementById('h-monthly').textContent = fmt(T.headings.monthly, { n: months.length });
   document.getElementById('chart-monthly').innerHTML = stackedBars(months, tools, function (t, k) {
     return moByTool[t][k] || 0;
   }, function (k) { return k.slice(2).replace('-', '/'); }, 150);
@@ -748,7 +1036,7 @@ function render() {
       '<div class="htrack"><div class="hfill" style="width:' + pct.toFixed(1) + '%;background:' + col + '"></div></div>' +
       '<div class="hval">' + fmtH(catSec[c]) + ' · ' + pct.toFixed(0) + '%</div></div>';
   });
-  document.getElementById('cats').innerHTML = catRows || '<div class="muted" style="font-size:13px">该时间段没有数据</div>';
+  document.getElementById('cats').innerHTML = catRows || '<div class="muted" style="font-size:13px">' + T.units.none + '</div>';
 
   // Top 项目
   var rows = [];
@@ -767,9 +1055,9 @@ function render() {
     var pct = (r.sec / maxProj) * 100;
     projHtml += '<div class="hrow"><div class="hname" title="' + r.proj + '">' + r.proj + '</div>' +
       '<div class="htrack"><div class="hfill" style="width:' + pct.toFixed(1) + '%;background:' + color(r.tool) + '"></div></div>' +
-      '<div class="hval">' + fmtH(r.sec) + ' <span class="muted">· ' + r.cat + ' · 最近 ' + r.last.slice(5) + '</span></div></div>';
+      '<div class="hval">' + fmtH(r.sec) + ' <span class="muted">· ' + r.cat + ' · ' + T.projectsRecent + ' ' + r.last.slice(5) + '</span></div></div>';
   });
-  document.getElementById('projects').innerHTML = projHtml || '<div class="muted" style="font-size:13px">该时间段没有数据</div>';
+  document.getElementById('projects').innerHTML = projHtml || '<div class="muted" style="font-size:13px">' + T.units.none + '</div>';
 }
 
 function presetRange(name) {
@@ -854,12 +1142,48 @@ function renderJson({ toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourl
   }, null, 2);
 }
 
-function printHelp() {
-  console.log(`cchour v${pkg.version} — AI 编程工具时间报表 (Claude Code / Codex)
+function logOtherSummary(report, t) {
+  const others = report.projRows.filter((r) => r.cat === t.other).sort((a, b) => b.sec - a.sec);
+  if (!others.length) return;
+  const top = others.slice(0, 8).map((r) => `${r.proj} (${(r.sec / 3600).toFixed(1)}h)`).join(', ');
+  const hours = (others.reduce((sum, r) => sum + r.sec, 0) / 3600).toFixed(1);
+  console.error(fill(t.llm.otherSummary, { projects: others.length, hours, top }));
+}
 
-用法: cchour [选项]
+function printHelp(lang) {
+  if (lang === 'en') {
+    console.log(`cchour v${pkg.version} - ${tr('en').helpTitle}
 
-选项:
+${tr('en').helpUsage}
+
+${tr('en').helpOptions}
+  -o, --output <file>   Output HTML path (default ./cchour-report.html)
+      --days <N>        Show the last N days in the daily chart (default 30)
+      --since <date>    Only count activity on/after this date, format YYYY-MM-DD
+      --until <date>    Only count activity through this date, inclusive
+      --week [W]        Weekly shortcut: no value=this week; last=last full week;
+                        YYYY-MM-DD=the week containing that date
+      --month [M]       Monthly shortcut: no value=this month; last=last full month;
+                        YYYY-MM=a specific month
+      --lang <en|cn>    UI/help language for the generated report and CLI messages
+      --llm-category    Ask an OpenAI-compatible LLM to improve category mapping
+      --llm-model <m>   Model for --llm-category (or use CCHOUR_LLM_MODEL)
+      --open            Open the generated report in the default browser
+      --json            Output JSON instead of HTML
+  -h, --help            Show help
+  -v, --version         Show version
+
+Custom category rules can be defined in ~/.cchour/categories.json:
+  [["Category", ["project keyword", "..."], ["content keyword", "..."]?], ...]
+Project keywords match against lowercased project names in order.
+The optional third array is used for content-level classification of misc sessions.`);
+    return;
+  }
+  console.log(`cchour v${pkg.version} — ${tr('cn').helpTitle}
+
+${tr('cn').helpUsage}
+
+${tr('cn').helpOptions}
   -o, --output <文件>   输出 HTML 路径（默认 ./cchour-report.html）
       --days <N>        每日图表显示最近 N 天（默认 30）
       --since <日期>    只统计该日期（含）之后的活动，格式 YYYY-MM-DD
@@ -867,6 +1191,9 @@ function printHelp() {
       --week [W]        周报快捷范围：不带值=本周（周一起到今天）；last=上一整周；
                         YYYY-MM-DD=该日期所在的周（周一 ~ 周日，不超过今天）
       --month [M]       月报快捷范围：不带值=本月；last=上个整月；YYYY-MM=指定月
+      --lang <en|cn>    生成报表与 CLI 提示语言
+      --llm-category    使用 OpenAI 兼容 LLM 改进分类映射
+      --llm-model <m>   --llm-category 使用的模型（或环境变量 CCHOUR_LLM_MODEL）
       --open            生成后用系统默认浏览器打开
       --json            输出 JSON 而非 HTML（默认打到 stdout，配 -o 则写文件）
   -h, --help            显示帮助
@@ -874,18 +1201,16 @@ function printHelp() {
 
 分类规则可用 ~/.cchour/categories.json 自定义，格式:
   [["分类名", ["项目名关键词", ...], ["内容关键词", ...]?], ...]
-按顺序对项目名做小写包含匹配，未命中归入「其他」。
-可选的第三个数组用于杂项目录（home / code 根目录等）会话的内容级分类:
-匹配会话首条用户消息，命中则把该会话挪进对应分类。`);
+按顺序对项目名做小写包含匹配；可选第三个数组用于杂项目录会话的内容级分类。`);
 }
 
-function parseDayArg(name, s) {
+function parseDayArg(name, s, lang) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
   let d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
   // new Date 会把 2026-13-99 这类值自动进位，回验分量拦住
   if (d && (d.getFullYear() !== +m[1] || d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[3])) d = null;
   if (!d || isNaN(d.getTime())) {
-    console.error(`${name} 需要 YYYY-MM-DD 格式的日期，收到: ${s}`);
+    console.error(`${name} ${tr(lang).helpDateFmt} ${s}`);
     process.exit(1);
   }
   return d;
@@ -893,13 +1218,14 @@ function parseDayArg(name, s) {
 
 // --week/--month 展开成 since/until。周一为一周起点（与周图一致），范围不超过今天。
 function expandShortcutRange(opts) {
+  const t = tr(opts.lang);
   if (!opts.week && !opts.month) return;
   if (opts.week && opts.month) {
-    console.error('--week 与 --month 不能同时使用');
+    console.error(t.helpWeekMonthConflict);
     process.exit(1);
   }
   if (opts.since || opts.until) {
-    console.error(`--${opts.week ? 'week' : 'month'} 不能与 --since/--until 同时使用`);
+    console.error(`--${opts.week ? 'week' : 'month'} ${t.helpShortcutConflict}`);
     process.exit(1);
   }
   const now = new Date();
@@ -909,7 +1235,7 @@ function expandShortcutRange(opts) {
     let anchor;
     if (opts.week === true) anchor = today;
     else if (opts.week === 'last') anchor = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7);
-    else anchor = parseDayArg('--week', opts.week);
+    else anchor = parseDayArg('--week', opts.week, opts.lang);
     const dow = (anchor.getDay() + 6) % 7; // 周一=0
     since = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() - dow);
     until = new Date(since.getFullYear(), since.getMonth(), since.getDate() + 6);
@@ -920,7 +1246,7 @@ function expandShortcutRange(opts) {
     else {
       const m = /^(\d{4})-(\d{2})$/.exec(opts.month);
       if (!m || +m[2] < 1 || +m[2] > 12) {
-        console.error(`--month 需要 last 或 YYYY-MM 格式，收到: ${opts.month}`);
+        console.error(`${t.helpMonthFmt} ${opts.month}`);
         process.exit(1);
       }
       y = +m[1];
@@ -930,7 +1256,7 @@ function expandShortcutRange(opts) {
     until = new Date(y, mo + 1, 0);
   }
   if (since > today) {
-    console.error(`--${opts.week ? 'week' : 'month'} 指定的范围在未来，没有数据`);
+    console.error(`--${opts.week ? 'week' : 'month'} ${t.helpFutureRange}`);
     process.exit(1);
   }
   if (until > today) until = today;
@@ -941,52 +1267,208 @@ function expandShortcutRange(opts) {
 function parseArgs(argv) {
   const opts = {
     output: 'cchour-report.html', outputSet: false, days: 30, open: false, json: false,
-    since: null, until: null, week: null, month: null,
+    since: null, until: null, week: null, month: null, lang: 'cn', llmCategory: false, llmModel: process.env.CCHOUR_LLM_MODEL || '',
   };
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--lang' && argv[i + 1]) {
+      opts.lang = String(argv[i + 1]).toLowerCase();
+      break;
+    }
+  }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-o' || a === '--output') {
       opts.output = argv[++i];
       opts.outputSet = true;
     } else if (a === '--days') opts.days = Math.max(1, parseInt(argv[++i], 10) || 30);
-    else if (a === '--since') opts.since = parseDayArg('--since', argv[++i]);
-    else if (a === '--until') opts.until = parseDayArg('--until', argv[++i]);
+    else if (a === '--since') opts.since = parseDayArg('--since', argv[++i], opts.lang);
+    else if (a === '--until') opts.until = parseDayArg('--until', argv[++i], opts.lang);
     else if (a === '--week' || a === '--month') {
       const next = argv[i + 1];
       opts[a.slice(2)] = next && !next.startsWith('-') ? argv[++i] : true;
-    } else if (a === '--open') opts.open = true;
+    } else if (a === '--lang') {
+      const next = (argv[++i] || '').toLowerCase();
+      if (next !== 'cn' && next !== 'en') {
+        console.error(`--lang must be en or cn, got: ${next || '(empty)'}`);
+        process.exit(1);
+      }
+      opts.lang = next;
+    } else if (a === '--llm-category') opts.llmCategory = true;
+    else if (a === '--llm-model') opts.llmModel = argv[++i] || '';
+    else if (a === '--open') opts.open = true;
     else if (a === '--json') opts.json = true;
     else if (a === '-h' || a === '--help') {
-      printHelp();
+      printHelp(opts.lang);
       process.exit(0);
     } else if (a === '-v' || a === '--version') {
       console.log(pkg.version);
       process.exit(0);
     } else {
-      console.error(`未知参数: ${a}\n`);
-      printHelp();
+      console.error(`${tr(opts.lang).helpUnknownArg}: ${a}\n`);
+      printHelp(opts.lang);
       process.exit(1);
     }
   }
   if (!opts.output) {
-    console.error('缺少 --output 的值');
+    console.error(tr(opts.lang).helpMissingOutput);
     process.exit(1);
   }
   expandShortcutRange(opts);
   if (opts.since && opts.until && opts.since > opts.until) {
-    console.error('--since 不能晚于 --until');
+    console.error(tr(opts.lang).helpSinceAfterUntil);
     process.exit(1);
   }
   return opts;
 }
 
-function main() {
+function createLlmCategoryClient(opts, rules, t) {
+  if (!opts.llmCategory) return null;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.error(t.llm.missingApiKey);
+    process.exit(1);
+  }
+  const model = opts.llmModel;
+  if (!model) {
+    console.error(t.llm.missingModel);
+    process.exit(1);
+  }
+  const base = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const url = base.endsWith('/v1') ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
+  const categories = Array.from(new Set(rules.map((r) => r[0]).filter(Boolean)));
+
+  return async (candidates) => {
+    const payload = candidates.map((candidate) => ({
+      project: candidate.project,
+      tool: candidate.tool,
+      context: candidate.samples.filter(Boolean).slice(0, 2).join('\n---\n') || '',
+    }));
+    const prompt = opts.lang === 'en'
+      ? `You are organizing AI coding work into practical report categories.
+Existing categories you should reuse when they fit:
+${categories.join(', ')}
+
+Rules:
+1. Prefer an existing category when it is a reasonable fit.
+2. If none fits, create a short broad category name in English, reusable across multiple projects.
+3. Avoid "Other", "Misc", "Unknown", or one-off category names that just repeat the project name.
+4. Aim for a small stable taxonomy, roughly 4 to 10 categories for the whole set.
+5. Return JSON only.
+
+Return this shape:
+{"categories":["cat1","cat2"],"mappings":[{"project":"name","category":"chosen category","reason":"short"}]}
+
+Projects to classify:
+${JSON.stringify(payload, null, 2)}`
+      : `你要把 AI 编程项目归类为适合报表展示的工作分类。
+优先复用这些已有分类：
+${categories.join('、')}
+
+规则：
+1. 如果已有分类基本合适，优先复用已有分类。
+2. 如果都不合适，可以新建简短、宽泛、可复用的中文分类名。
+3. 不要使用“其他”“杂项”“未知”，也不要直接把项目名当分类名。
+4. 整体尽量收敛成 4 到 10 个稳定分类。
+5. 只返回 JSON。
+
+返回格式：
+{"categories":["分类1","分类2"],"mappings":[{"project":"项目名","category":"选中的分类","reason":"简短原因"}]}
+
+待分类项目：
+${JSON.stringify(payload, null, 2)}`;
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        messages: [
+          { role: 'system', content: 'You are a strict classifier. Respond with JSON only.' },
+          { role: 'user', content: prompt },
+        ],
+      }),
+    });
+    if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
+    const data = await res.json();
+    const text = data && data.choices && data.choices[0] && data.choices[0].message
+      ? data.choices[0].message.content
+      : '';
+    const m = String(text).match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    let parsed;
+    try {
+      parsed = JSON.parse(m[0]);
+    } catch {
+      return null;
+    }
+    if (!parsed || !Array.isArray(parsed.mappings)) return null;
+    const mapping = new Map();
+    for (const item of parsed.mappings) {
+      if (!item || !item.project) continue;
+      const category = cleanCategoryName(item.category, t.other);
+      if (!category) continue;
+      mapping.set(item.project, category);
+    }
+    return mapping;
+  };
+}
+
+async function applyLlmCategoryMapping(data, catOverride, llmCandidates, categorize, llmClassify, t) {
+  if (!llmClassify) return;
+  console.error(t.llm.classifying);
+  const pending = [];
+  for (const [, candidate] of llmCandidates) {
+    if (catOverride.has(candidate.project)) continue;
+    if (categorize(candidate.project)) continue;
+    pending.push(candidate);
+  }
+  if (!pending.length) return;
+  try {
+    const mapping = await llmClassify(pending);
+    if (!mapping || !mapping.size) return;
+    let applied = 0;
+    const categoriesUsed = new Set();
+    for (const candidate of pending) {
+      const cat = cleanCategoryName(mapping.get(candidate.project), t.other);
+      if (!cat || cat === t.other) continue;
+      categoriesUsed.add(cat);
+      if (codeMiscProjects(t).has(candidate.project)) {
+        const synthetic = `${trimCategorySuffix(candidate.project, t)} · ${cat}`;
+        const toolProjects = data.get(candidate.tool);
+        const ts = toolProjects && toolProjects.get(candidate.project);
+        if (ts && ts.length) {
+          toolProjects.delete(candidate.project);
+          const next = toolProjects.get(synthetic) || [];
+          next.push(...ts);
+          toolProjects.set(synthetic, next);
+          catOverride.set(synthetic, cat);
+          applied++;
+        }
+      } else {
+        catOverride.set(candidate.project, cat);
+        applied++;
+      }
+    }
+    if (applied > 0) console.error(fill(t.llm.summary, { projects: applied, categories: categoriesUsed.size }));
+  } catch {
+    // LLM is best-effort; keep local keyword mapping if the request fails.
+  }
+}
+
+async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  const t = tr(opts.lang);
   const t0 = Date.now();
 
-  console.error('扫描数据源…');
-  const rules = loadCategories();
-  const { data, catOverride } = collect(makeContentCategorize(rules));
+  console.error(t.statusScanning);
+  const rules = loadCategories(opts.lang);
+  const projectCategorize = makeCategorize(rules);
+  const { data, catOverride, llmCandidates } = collect(makeContentCategorize(rules), t);
+  await applyLlmCategoryMapping(data, catOverride, llmCandidates, projectCategorize, createLlmCategoryClient(opts, rules, t), t);
 
   // --since/--until：按本地时区过滤事件，until 含当天整天
   const lo = opts.since ? opts.since.getTime() / 1000 : -Infinity;
@@ -1004,33 +1486,34 @@ function main() {
   for (const [tool, projects] of data) {
     let n = 0;
     for (const ts of projects.values()) n += ts.length;
-    console.error(`  ${tool}: ${projects.size} 个项目, ${n} 个事件`);
+    console.error(`  ${tool}: ${projects.size} ${t.statusProjects}, ${n} ${t.statusEvents}`);
   }
 
-  const report = buildReport(data, makeCategorize(rules), catOverride, opts.days, {
+  const report = buildReport(data, projectCategorize, catOverride, opts.days, {
     since: opts.since, until: opts.until,
-  });
+  }, t.other);
+  logOtherSummary(report, t);
 
   const sorted = Array.from(report.toolSeconds.entries()).sort((a, b) => b[1] - a[1]);
-  for (const [t, s] of sorted) console.error(`  ${t}: ${(s / 3600).toFixed(1)} 小时`);
+  for (const [tool, s] of sorted) console.error(`  ${tool}: ${(s / 3600).toFixed(1)} ${t.cards.hours}`);
 
   if (opts.json) {
     const json = renderJson(report);
     if (opts.outputSet) {
       const outPath = path.resolve(opts.output);
       fs.writeFileSync(outPath, json + '\n', 'utf8');
-      console.error(`已生成 ${outPath}（耗时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒）`);
+      console.error(`${t.statusGenerated} ${outPath} (${t.statusElapsed} ${((Date.now() - t0) / 1000).toFixed(1)}${t.sec})`);
     } else {
       console.log(json);
-      console.error(`耗时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒`);
+      console.error(`${t.statusElapsed} ${((Date.now() - t0) / 1000).toFixed(1)}${t.sec}`);
     }
     return;
   }
 
-  const html = renderHtml(report);
+  const html = renderHtml(report, opts.lang);
   const outPath = path.resolve(opts.output);
   fs.writeFileSync(outPath, html, 'utf8');
-  console.error(`已生成 ${outPath}（耗时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒）`);
+  console.error(`${t.statusGenerated} ${outPath} (${t.statusElapsed} ${((Date.now() - t0) / 1000).toFixed(1)}${t.sec})`);
 
   if (opts.open) {
     const opener =
@@ -1040,4 +1523,7 @@ function main() {
   }
 }
 
-main();
+main().catch((err) => {
+  console.error(err && err.message ? err.message : String(err));
+  process.exit(1);
+});

@@ -45,8 +45,12 @@ cchour --week 2026-06-03  # the week containing that date
 cchour --month            # this month so far
 cchour --month last       # last full month — instant monthly report
 cchour --month 2026-05    # a specific month
+cchour --lang en          # generate the report UI in English
+cchour --lang cn          # generate the report UI in Chinese
 cchour --json             # print report data as JSON to stdout
 cchour --json -o out.json # ...or write it to a file
+cchour --llm-category --llm-model gpt-5.4-mini --lang en
+                         # use an OpenAI-compatible LLM to improve category mapping
 ```
 
 `--since` / `--until` filter events by local-time date before any stats are
@@ -69,6 +73,11 @@ data and the picker narrows within it.
 `--until` pair (weeks start on Monday, ranges never extend past today), so
 `cchour --week last --json` is a one-liner weekly report. They cannot be
 combined with each other or with explicit `--since` / `--until`.
+
+### Report language
+
+Use `--lang en` or `--lang cn` to choose the generated HTML UI language and CLI
+help/status messages. The default is `cn`.
 
 ### JSON output
 
@@ -121,6 +130,38 @@ session are matched against these content keywords, and the session is moved out
 "misc" bucket into the matching category (shown as e.g. `code root · Writing`
 in the project list). Sessions with no match stay in misc. This works for both
 Claude Code and Codex sessions.
+
+### LLM-assisted category mapping
+
+When local keyword rules are too weak, `--llm-category` can ask an
+OpenAI-compatible model to reorganize unmatched projects into a small set of
+practical report categories.
+
+Required environment variables:
+
+```bash
+export OPENAI_API_KEY=...
+export OPENAI_BASE_URL=https://api.openai.com/v1   # optional if using OpenAI
+```
+
+Then run:
+
+```bash
+cchour --llm-category --llm-model gpt-5.4-mini
+```
+
+Behavior:
+
+- The LLM is only used as a fallback when a project name does not match any
+  configured category rule.
+- For misc sessions (home, `~/code`, Downloads, etc.), it can also use the
+  first user messages as extra context and move the session into a better
+  category.
+- The model prefers your existing categories when they fit, but it may also
+  propose a few new reusable category names when your current rule set is too
+  sparse.
+- The CLI prints a short summary like `LLM reclassified 42 projects across 7
+  categories` when remapping succeeds.
 
 ## Requirements
 
