@@ -800,6 +800,9 @@ function renderHtml(report, lang) {
   .htrack { flex:1; height:14px; background:#f3f3f0; border-radius:7px; overflow:hidden; }
   .hfill { height:100%; border-radius:7px; }
   .hval { width:230px; font-size:12px; text-align:right; flex-shrink:0; }
+  .proj-track { flex:1; height:18px; background:#f3f3f0; border-radius:9px; overflow:hidden; position:relative; min-width:0; }
+  .proj-fill { height:100%; border-radius:9px; min-width:2px; }
+  .proj-val { width:230px; font-size:12px; text-align:right; flex-shrink:0; line-height:1.3; }
   .muted { color:var(--muted); }
   .controls { margin-top:18px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
   .chip { border:1px solid var(--line); background:var(--card); border-radius:16px; padding:5px 13px;
@@ -1052,10 +1055,10 @@ function render() {
   var maxProj = top.length ? top[0].sec : 1;
   var projHtml = '';
   top.forEach(function (r) {
-    var pct = (r.sec / maxProj) * 100;
+    var pct = maxProj ? (r.sec / maxProj) * 100 : 0;
     projHtml += '<div class="hrow"><div class="hname" title="' + r.proj + '">' + r.proj + '</div>' +
-      '<div class="htrack"><div class="hfill" style="width:' + pct.toFixed(1) + '%;background:' + color(r.tool) + '"></div></div>' +
-      '<div class="hval">' + fmtH(r.sec) + ' <span class="muted">· ' + r.cat + ' · ' + T.projectsRecent + ' ' + r.last.slice(5) + '</span></div></div>';
+      '<div class="proj-track"><div class="proj-fill" style="width:' + pct.toFixed(1) + '%;background:' + color(r.tool) + '"></div></div>' +
+      '<div class="proj-val">' + fmtH(r.sec) + ' <span class="muted">· ' + r.cat + ' · ' + T.projectsRecent + ' ' + r.last.slice(5) + '</span></div></div>';
   });
   document.getElementById('projects').innerHTML = projHtml || '<div class="muted" style="font-size:13px">' + T.units.none + '</div>';
 }
