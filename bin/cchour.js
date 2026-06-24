@@ -20,6 +20,8 @@ const { spawn } = require('child_process');
 const pkg = require('../package.json');
 
 const HOME = os.homedir();
+const CCHOUR_DIR = path.join(HOME, '.cchour');
+const EXCLUDES_FILE = path.join(CCHOUR_DIR, 'excludes.json');
 const CLAUDE_DIR = path.join(HOME, '.claude', 'projects');
 const CODEX_DIRS = [
   path.join(HOME, '.codex', 'sessions'),
@@ -45,6 +47,13 @@ const I18N = {
     clippedNote: '数据已按命令行参数截取',
     dataFrom: '数据来自本机 Claude Code 与 Codex 会话记录',
     activeFormula: '活跃时长 = 相邻操作间隔 ≤ 15 分钟的累计',
+    timeFilter: '时间过滤',
+    nightly: '夜间',
+    taskDetails: 'Agent 任务明细',
+    spec: 'Spec',
+    goal: 'Goal',
+    result: 'Result',
+    tokens: 'Tokens',
     controls: {
       all: '全部',
       today: '今天',
@@ -144,6 +153,13 @@ const I18N = {
     clippedNote: 'Data was clipped by CLI range',
     dataFrom: 'Data comes from local Claude Code and Codex session logs',
     activeFormula: 'Active time = accumulated gaps between actions <= 15 minutes',
+    timeFilter: 'Time filter',
+    nightly: 'Nightly',
+    taskDetails: 'Agent task details',
+    spec: 'Spec',
+    goal: 'Goal',
+    result: 'Result',
+    tokens: 'Tokens',
     controls: {
       all: 'All',
       today: 'Today',
@@ -397,7 +413,7 @@ function defaultCategoriesForLang(lang) {
 }
 
 function loadCategories(lang) {
-  const p = path.join(HOME, '.cchour', 'categories.json');
+  const p = path.join(CCHOUR_DIR, 'categories.json');
   try {
     const rules = JSON.parse(fs.readFileSync(p, 'utf8'));
     if (Array.isArray(rules) && rules.length) return rules;
@@ -405,6 +421,133 @@ function loadCategories(lang) {
     /* 无配置文件时用默认规则 */
   }
   return defaultCategoriesForLang(lang);
+}
+
+function expandUserPath(p, home = HOME) {
+  const s = String(p || '').trim();
+  if (!s) return '';
+  if (s === '~') return home;
+  if (s.startsWith('~/')) return path.join(home, s.slice(2));
+  return s;
+}
+
+function normalizeProjectName(s) {
+  return String(s || '').trim().toLowerCase();
+}
+
+function normalizePathPrefix(p, home = HOME) {
+  const expanded = expandUserPath(p, home);
+  if (!expanded) return '';
+  return path.resolve(expanded).replace(/\/+$/, '');
+}
+
+function hasWildcard(s) {
+  return String(s || '').includes('*');
+}
+
+function wildcardToRegExp(pattern) {
+  const escaped = String(pattern || '')
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*');
+  return new RegExp(`^${escaped}$`);
+}
+
+function wildcardToContainsRegExp(pattern) {
+  const escaped = String(pattern || '')
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '[^\\s\\])>"\']*');
+  return new RegExp(escaped);
+}
+
+function normalizeExcludeConfig(config = {}, home = HOME) {
+  const projectValues = Array.isArray(config.projects) ? config.projects : [];
+  const pathValues = Array.isArray(config.paths) ? config.paths : [];
+  return {
+    projects: Array.from(new Set(projectValues.map(normalizeProjectName).filter(Boolean))).sort(),
+    paths: Array.from(new Set(pathValues.map((p) => normalizePathPrefix(p, home)).filter(Boolean))).sort(),
+  };
+}
+
+function loadExcludeConfig(file = EXCLUDES_FILE) {
+  try {
+    return normalizeExcludeConfig(JSON.parse(fs.readFileSync(file, 'utf8')));
+  } catch {
+    return normalizeExcludeConfig();
+  }
+}
+
+function saveExcludeConfig(config, file = EXCLUDES_FILE) {
+  const normalized = normalizeExcludeConfig(config);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(normalized, null, 2) + '\n', 'utf8');
+  return normalized;
+}
+
+function addExcludeEntry(config, type, value, home = HOME) {
+  const normalized = normalizeExcludeConfig(config, home);
+  if (type === 'project') {
+    const project = normalizeProjectName(value);
+    if (project && !normalized.projects.includes(project)) normalized.projects.push(project);
+  } else if (type === 'path') {
+    const p = normalizePathPrefix(value, home);
+    if (p && !normalized.paths.includes(p)) normalized.paths.push(p);
+  }
+  normalized.projects.sort();
+  normalized.paths.sort();
+  return normalized;
+}
+
+function valueMatchesPattern(candidate, pattern) {
+  if (!candidate || !pattern) return false;
+  if (hasWildcard(pattern)) return wildcardToRegExp(pattern).test(candidate);
+  return candidate === pattern;
+}
+
+function pathMatchesPattern(candidate, pattern) {
+  if (!candidate || !pattern) return false;
+  const c = path.resolve(candidate).replace(/\/+$/, '');
+  return valueMatchesPattern(c, pattern);
+}
+
+function textMentionsExcludedPath(text, excludes) {
+  const body = String(text || '');
+  if (!body) return false;
+  const normalized = normalizeExcludeConfig(excludes);
+  return normalized.paths.some((pattern) => {
+    if (hasWildcard(pattern)) return wildcardToContainsRegExp(pattern).test(body);
+    return body.includes(pattern);
+  });
+}
+
+function shouldExcludeTaskDetail(task, excludes) {
+  if (!task) return false;
+  if (shouldExcludeSession({
+    project: task.project,
+    cwd: task.cwd,
+    path: task.sourceFile,
+    file: task.sourceFile,
+  }, excludes)) return true;
+  const texts = [
+    task.spec,
+    task.goal,
+    task.result,
+    ...(task.userTexts || []),
+    ...(task.assistantTexts || []),
+  ];
+  return texts.some((text) => textMentionsExcludedPath(text, excludes));
+}
+
+function shouldExcludeSession(meta, excludes) {
+  const normalized = normalizeExcludeConfig(excludes);
+  const project = normalizeProjectName(meta && meta.project);
+  if (project && normalized.projects.some((p) => valueMatchesPattern(project, p))) return true;
+  const paths = [meta && meta.cwd, meta && meta.path, meta && meta.file].filter(Boolean);
+  return normalized.paths.some((pattern) => paths.some((p) => pathMatchesPattern(expandUserPath(p), pattern)));
+}
+
+function cwdFromHead(head) {
+  const m = String(head || '').match(/"cwd"\s*:\s*"([^"]+)"/);
+  return m ? m[1].replace(/\/+$/, '') : '';
 }
 
 function makeCategorize(rules) {
@@ -462,6 +605,35 @@ function claudeUserTexts(head) {
   return texts.join('\n');
 }
 
+function messageContentText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((x) => {
+      if (!x) return '';
+      if (typeof x.text === 'string') return x.text;
+      if (x.type === 'input_text' && typeof x.text === 'string') return x.text;
+      return '';
+    }).filter(Boolean).join(' ');
+  }
+  return '';
+}
+
+function claudeLineText(j) {
+  if (j.type === 'user' && j.message && !j.isMeta) {
+    const text = clipText(messageContentText(j.message.content), 2000);
+    if (text && !text.startsWith('Caveat:')) return { role: 'user', text };
+  }
+  if (j.type === 'assistant' && j.message) {
+    const text = clipText(messageContentText(j.message.content), 2000);
+    if (text) return { role: 'assistant', text };
+  }
+  if ((j.type === 'last-prompt' || j.lastPrompt) && typeof (j.lastPrompt || j.prompt) === 'string') {
+    const text = clipText(j.lastPrompt || j.prompt, 2000);
+    if (text) return { role: 'user', text };
+  }
+  return null;
+}
+
 // 取 Codex 会话前几条真实用户输入（rollout 格式：response_item payload 里
 // role=user 的 input_text）。首条往往是 <environment_context> 环境信息，
 // 文本里含 "codex" 等字样会误命中内容关键词，需整块剔除后再判断。
@@ -495,6 +667,22 @@ function codexUserTexts(head) {
     if (texts.length >= CONTENT_MSGS) break;
   }
   return texts.join('\n');
+}
+
+function codexPayloadText(j) {
+  const p = j && j.payload;
+  if (!p) return null;
+  if (j.type === 'response_item' && p.type === 'message' && p.role === 'user' && Array.isArray(p.content)) {
+    const text = p.content.filter((x) => x && x.type === 'input_text').map((x) => x.text).join(' ');
+    return { role: 'user', text: clipText(text, 2000) };
+  }
+  if (j.type === 'event_msg' && p.type === 'user_message' && typeof p.message === 'string') {
+    return { role: 'user', text: clipText(p.message, 2000) };
+  }
+  if (j.type === 'response_item' && p.type === 'message' && p.role === 'assistant' && Array.isArray(p.content)) {
+    return { role: 'assistant', text: clipText(messageContentText(p.content), 2000) };
+  }
+  return null;
 }
 
 function trimCategorySuffix(project, t) {
@@ -535,6 +723,96 @@ function activeSeconds(ts) {
     prev = t;
   }
   return total;
+}
+
+function buildActiveSegments(ts) {
+  const u = uniqSorted(ts);
+  const out = [];
+  for (let i = 0; i < u.length; i++) {
+    const t = u[i];
+    const prev = i > 0 ? u[i - 1] : null;
+    const next = i < u.length - 1 ? u[i + 1] : null;
+    if (next !== null && next - t <= GAP) {
+      out.push({ start: t, end: next, seconds: next - t });
+    } else if ((prev === null || t - prev > GAP) && next === null) {
+      out.push({ start: t, end: t + MIN_EVENT, seconds: MIN_EVENT });
+    } else if ((prev === null || t - prev > GAP) && next !== null && next - t > GAP) {
+      out.push({ start: t, end: t + MIN_EVENT, seconds: MIN_EVENT });
+    }
+  }
+  return out.filter((s) => s.seconds > 0);
+}
+
+function segmentOverlapSeconds(seg, lo, hi) {
+  const start = Math.max(seg.start, lo);
+  const end = Math.min(seg.end, hi);
+  return Math.max(0, end - start);
+}
+
+function emptyTokenUsage() {
+  return { input: 0, cachedInput: 0, output: 0, reasoningOutput: 0, total: 0, available: false };
+}
+
+function normalizeTokenUsage(raw) {
+  if (!raw) return null;
+  const input = +(raw.input_tokens || 0);
+  const cachedInput = +(raw.cached_input_tokens || raw.cache_creation_input_tokens || 0)
+    + +(raw.cache_read_input_tokens || 0);
+  const output = +(raw.output_tokens || 0);
+  const reasoningOutput = +(raw.reasoning_output_tokens || 0);
+  const total = +(raw.total_tokens || 0) || input + cachedInput + output;
+  return { input, cachedInput, output, reasoningOutput, total, available: true };
+}
+
+function extractTokenUsage(tool, j) {
+  if (tool === 'Codex' && j.type === 'event_msg' && j.payload && j.payload.type === 'token_count') {
+    return normalizeTokenUsage(j.payload.info && j.payload.info.last_token_usage);
+  }
+  if (tool === 'Claude Code' && j.type === 'assistant' && j.message && j.message.usage) {
+    return normalizeTokenUsage(j.message.usage);
+  }
+  return null;
+}
+
+function sumTokenUsage(items) {
+  const out = emptyTokenUsage();
+  for (const item of items) {
+    if (!item || !item.available) continue;
+    out.input += item.input;
+    out.cachedInput += item.cachedInput;
+    out.output += item.output;
+    out.reasoningOutput += item.reasoningOutput;
+    out.total += item.total;
+    out.available = true;
+  }
+  return out;
+}
+
+function cleanTaskText(s) {
+  return String(s || '')
+    .replace(/<(environment_context|user_instructions|turn_context)>[\s\S]*?<\/\1>/g, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function clipText(s, n = 260) {
+  const clean = cleanTaskText(s);
+  return clean.length > n ? `${clean.slice(0, n - 3)}...` : clean;
+}
+
+function inferGoal(spec) {
+  const s = cleanTaskText(spec);
+  const m = s.match(/\b(?:goal|objective|need|want|please|add|build|fix|report)\b[:\s]+(.{8,220})/i);
+  return clipText(m ? m[1] : s, 220) || 'unknown';
+}
+
+function extractTaskSummary(session) {
+  const spec = clipText((session.userTexts || []).find(Boolean), 320) || 'unknown';
+  const explicitGoal = clipText(session.goal, 220);
+  const goal = explicitGoal || (spec === 'unknown' ? 'unknown' : inferGoal(spec));
+  const result = clipText(session.result || [...(session.assistantTexts || [])].reverse().find(Boolean), 320) || 'unknown';
+  return { spec, goal, result };
 }
 
 function pad2(n) {
@@ -598,7 +876,7 @@ function walkJsonl(dir, cb) {
   }
 }
 
-function collect(contentCategorize, t) {
+function collect(contentCategorize, t, excludes = normalizeExcludeConfig()) {
   // tool -> Map(project -> [timestamps])
   const data = new Map();
   // 杂项会话经内容级分类拆出的合成项目名 -> 分类（覆盖按项目名的分类）
@@ -621,7 +899,8 @@ function collect(contentCategorize, t) {
         if (!fn.endsWith('.jsonl')) continue;
         const file = path.join(full, fn);
         let p = proj;
-        const head = isMisc ? readHead(file) : '';
+        const head = readHead(file);
+        if (shouldExcludeSession({ project: proj, cwd: cwdFromHead(head), file }, excludes)) continue;
         if (isMisc) {
           const content = claudeUserTexts(head);
           const cat = contentCategorize(content);
@@ -641,6 +920,7 @@ function collect(contentCategorize, t) {
     walkJsonl(rootDir, (file) => {
       const head = readHead(file);
       const proj = codexProjectName(head, t);
+      if (shouldExcludeSession({ project: proj, cwd: cwdFromHead(head), file }, excludes)) return;
       let p = proj;
       if (codeMiscProjects(t).has(proj)) {
         const content = codexUserTexts(head);
@@ -667,6 +947,240 @@ function collect(contentCategorize, t) {
   return { data, catOverride, llmCandidates };
 }
 
+function scanSessionFile(file, tool, project, category, textExtractor) {
+  const timestamps = [];
+  const tokenItems = [];
+  const userTexts = [];
+  const assistantTexts = [];
+  let sessionId = path.basename(file, '.jsonl');
+  let cwd = '';
+  let result = '';
+  let goal = '';
+  let source = '';
+  try {
+    source = fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+  for (const line of source.split('\n')) {
+    if (!line) continue;
+    let j;
+    try { j = JSON.parse(line); } catch { continue; }
+    if (j.sessionId) sessionId = j.sessionId;
+    if (j.cwd) cwd = j.cwd;
+    if (j.timestamp) {
+      const ts = Date.parse(j.timestamp);
+      if (!Number.isNaN(ts)) timestamps.push(ts / 1000);
+    }
+    const usage = extractTokenUsage(tool, j);
+    if (usage) tokenItems.push(usage);
+    if (j.type === 'event_msg' && j.payload && j.payload.type === 'thread_goal_updated' && j.payload.goal) {
+      goal = j.payload.goal.objective || goal;
+    }
+    if (j.type === 'event_msg' && j.payload && j.payload.type === 'task_complete') {
+      result = j.payload.last_agent_message || result;
+    }
+    const text = textExtractor ? textExtractor(j) : null;
+    if (text && text.role === 'user' && text.text && userTexts.length < 5 && userTexts[userTexts.length - 1] !== text.text) {
+      userTexts.push(text.text);
+    }
+    if (text && text.role === 'assistant' && text.text) {
+      assistantTexts.push(text.text);
+      if (assistantTexts.length > 5) assistantTexts.shift();
+    }
+  }
+  if (!timestamps.length) return null;
+  return {
+    id: `${tool}:${sessionId}:${file}`,
+    tool,
+    project,
+    category,
+    sessionId,
+    turnId: null,
+    sourceFile: file,
+    cwd,
+    firstTs: Math.min(...timestamps),
+    lastTs: Math.max(...timestamps),
+    timestamps,
+    tokens: sumTokenUsage(tokenItems),
+    userTexts,
+    assistantTexts,
+    goal,
+    result,
+  };
+}
+
+function readJsonl(file, cb) {
+  let source;
+  try {
+    source = fs.readFileSync(file, 'utf8');
+  } catch {
+    return false;
+  }
+  for (const line of source.split('\n')) {
+    if (!line) continue;
+    let j;
+    try { j = JSON.parse(line); } catch { continue; }
+    cb(j);
+  }
+  return true;
+}
+
+function extractCodexTaskDetails(file, project, category) {
+  const turns = new Map();
+  const fallbackTexts = { userTexts: [], assistantTexts: [] };
+  let sessionId = path.basename(file, '.jsonl');
+  let currentTurn = null;
+  let sawBoundary = false;
+  const ensureTurn = (turnId, ts) => {
+    const id = turnId || currentTurn || 'session';
+    if (!turns.has(id)) {
+      turns.set(id, {
+        id: `Codex:${sessionId}:${id}:${file}`,
+        tool: 'Codex',
+        project,
+        category,
+        sessionId,
+        turnId: id === 'session' ? null : id,
+        sourceFile: file,
+        firstTs: ts || null,
+        lastTs: ts || null,
+        timestamps: [],
+        tokenItems: [],
+        userTexts: [],
+        assistantTexts: [],
+        goal: '',
+        goalStatus: '',
+        goalTokensUsed: null,
+        goalTimeUsedSeconds: null,
+        result: '',
+      });
+    }
+    return turns.get(id);
+  };
+
+  const ok = readJsonl(file, (j) => {
+    if (j.payload && j.payload.id) sessionId = j.payload.id;
+    if (j.timestamp) {
+      const ts = Date.parse(j.timestamp);
+      const sec = Number.isNaN(ts) ? null : ts / 1000;
+      const p = j.payload || {};
+      if (j.type === 'event_msg' && p.turn_id) currentTurn = p.turn_id;
+      if (j.type === 'event_msg' && p.type === 'task_started') {
+        sawBoundary = true;
+        currentTurn = p.turn_id || currentTurn || `turn-${turns.size + 1}`;
+        const turn = ensureTurn(currentTurn, sec);
+        if (sec) {
+          turn.firstTs = turn.firstTs == null ? sec : Math.min(turn.firstTs, sec);
+          turn.lastTs = turn.lastTs == null ? sec : Math.max(turn.lastTs, sec);
+          turn.timestamps.push(sec);
+        }
+        return;
+      }
+      const turn = ensureTurn(currentTurn || p.turn_id || 'session', sec);
+      if (sec) {
+        turn.firstTs = turn.firstTs == null ? sec : Math.min(turn.firstTs, sec);
+        turn.lastTs = turn.lastTs == null ? sec : Math.max(turn.lastTs, sec);
+        turn.timestamps.push(sec);
+      }
+      if (j.type === 'event_msg' && p.type === 'thread_goal_updated' && p.goal) {
+        turn.goal = p.goal.objective || turn.goal;
+        turn.goalStatus = p.goal.status || turn.goalStatus;
+        turn.goalTokensUsed = p.goal.tokensUsed == null ? turn.goalTokensUsed : p.goal.tokensUsed;
+        turn.goalTimeUsedSeconds = p.goal.timeUsedSeconds == null ? turn.goalTimeUsedSeconds : p.goal.timeUsedSeconds;
+      }
+      if (j.type === 'event_msg' && p.type === 'task_complete') {
+        sawBoundary = true;
+        turn.result = p.last_agent_message || turn.result;
+        currentTurn = null;
+      }
+      const usage = extractTokenUsage('Codex', j);
+      if (usage) turn.tokenItems.push(usage);
+      const text = codexPayloadText(j);
+      if (text && text.role === 'user' && text.text) {
+        if (fallbackTexts.userTexts[fallbackTexts.userTexts.length - 1] !== text.text) fallbackTexts.userTexts.push(text.text);
+        if (turn.userTexts[turn.userTexts.length - 1] !== text.text) turn.userTexts.push(text.text);
+      }
+      if (text && text.role === 'assistant' && text.text) {
+        fallbackTexts.assistantTexts.push(text.text);
+        turn.assistantTexts.push(text.text);
+        if (turn.assistantTexts.length > 5) turn.assistantTexts.shift();
+      }
+    }
+  });
+  if (!ok) return [];
+  if (!sawBoundary) {
+    const fallback = scanSessionFile(file, 'Codex', project, category, codexPayloadText);
+    return fallback ? [Object.assign(fallback, extractTaskSummary(fallback))] : [];
+  }
+  return Array.from(turns.values()).filter((turn) => turn.timestamps.length).map((turn) => {
+    const tokens = sumTokenUsage(turn.tokenItems);
+    const session = {
+      ...turn,
+      tokens,
+      userTexts: turn.userTexts.length ? turn.userTexts : fallbackTexts.userTexts,
+      assistantTexts: turn.assistantTexts.length ? turn.assistantTexts : fallbackTexts.assistantTexts,
+    };
+    return { ...session, ...extractTaskSummary(session) };
+  });
+}
+
+function extractClaudeTaskDetails(file, project, category) {
+  const session = scanSessionFile(file, 'Claude Code', project, category, claudeLineText);
+  return session ? [{ ...session, ...extractTaskSummary(session) }] : [];
+}
+
+function collectDetailedSessions(contentCategorize, categorize, t, excludes = normalizeExcludeConfig()) {
+  const out = [];
+  const categoryForProject = (project) => categorize(project) || t.other;
+
+  if (isDir(CLAUDE_DIR)) {
+    for (const d of fs.readdirSync(CLAUDE_DIR).sort()) {
+      const full = path.join(CLAUDE_DIR, d);
+      if (!isDir(full)) continue;
+      const proj = claudeProjectName(d, t);
+      const isMisc = isMiscClaudeDir(d);
+      for (const fn of fs.readdirSync(full)) {
+        if (!fn.endsWith('.jsonl')) continue;
+        const file = path.join(full, fn);
+        const head = readHead(file);
+        if (shouldExcludeSession({ project: proj, cwd: cwdFromHead(head), file }, excludes)) continue;
+        let p = proj;
+        let cat = categoryForProject(proj);
+        if (isMisc) {
+          const content = claudeUserTexts(head);
+          const c = contentCategorize(content);
+          if (c) {
+            p = `${trimCategorySuffix(proj, t)} · ${c}`;
+            cat = c;
+          }
+        }
+        out.push(...extractClaudeTaskDetails(file, p, cat));
+      }
+    }
+  }
+
+  for (const rootDir of CODEX_DIRS) {
+    walkJsonl(rootDir, (file) => {
+      const head = readHead(file);
+      const proj = codexProjectName(head, t);
+      if (shouldExcludeSession({ project: proj, cwd: cwdFromHead(head), file }, excludes)) return;
+      let p = proj;
+      let cat = categoryForProject(proj);
+      if (codeMiscProjects(t).has(proj)) {
+        const c = contentCategorize(codexUserTexts(head));
+        if (c) {
+          p = `${trimCategorySuffix(proj, t)} · ${c}`;
+          cat = c;
+        }
+      }
+      out.push(...extractCodexTaskDetails(file, p, cat));
+    });
+  }
+
+  return out;
+}
+
 function buildReport(data, categorize, catOverride, ndays, range = {}, otherLabel = 'Other') {
   const toolSeconds = new Map();
   const toolDaily = new Map();
@@ -691,7 +1205,11 @@ function buildReport(data, categorize, catOverride, ndays, range = {}, otherLabe
         if (t < first) first = t;
         if (t > last) last = t;
       }
-      projRows.push({ tool, proj, sec, cat, first, last, daily: dailyActive(ts) });
+      projRows.push({
+        tool, proj, sec, cat, first, last,
+        daily: dailyActive(ts),
+        dayHour: bucketActive(ts, (t) => `${dayKey(t)}|${new Date(t * 1000).getHours()}`),
+      });
       for (const t of ts) allTs.push(t);
     }
     toolSeconds.set(tool, activeSeconds(allTs));
@@ -714,6 +1232,60 @@ function buildReport(data, categorize, catOverride, ndays, range = {}, otherLabe
   };
 }
 
+function buildNightlyTasks(sessions, since, until, startClock = '20:00', endClock = '08:00') {
+  const lo = since.getTime() / 1000;
+  const hi = until.getTime() / 1000;
+  const start = parseClockArg('--night-start', startClock, 'en');
+  const end = parseClockArg('--night-end', endClock, 'en');
+  const tasks = [];
+  for (const session of sessions) {
+    const segments = buildActiveSegments(session.timestamps || []);
+    const seconds = segments.reduce((sum, seg) => sum + segmentOverlapSeconds(seg, lo, hi), 0);
+    if (seconds < 60) continue;
+    const firstTs = Math.max(session.firstTs || lo, lo);
+    const lastTs = Math.min(session.lastTs || hi, hi);
+    tasks.push({
+      ...session,
+      firstTs,
+      lastTs,
+      seconds,
+      hours: +(seconds / 3600).toFixed(2),
+      windowDate: nightWindowDate(firstTs, start.h, end.h),
+    });
+  }
+  tasks.sort((a, b) => (a.firstTs || 0) - (b.firstTs || 0));
+  return tasks;
+}
+
+function buildTaskRowsForReport(sessions, lo = -Infinity, hi = Infinity, limit = 300, excludes = normalizeExcludeConfig()) {
+  const rows = [];
+  for (const session of sessions) {
+    if (shouldExcludeTaskDetail(session, excludes)) continue;
+    const segments = buildActiveSegments(session.timestamps || []);
+    const seconds = Number.isFinite(lo) || Number.isFinite(hi)
+      ? segments.reduce((sum, seg) => sum + segmentOverlapSeconds(seg, lo, hi), 0)
+      : segments.reduce((sum, seg) => sum + seg.seconds, 0);
+    if (seconds < 60) continue;
+    const firstTs = Number.isFinite(lo) ? Math.max(session.firstTs || lo, lo) : session.firstTs;
+    const lastTs = Number.isFinite(hi) ? Math.min(session.lastTs || hi, hi) : session.lastTs;
+    const row = {
+      ...session,
+      firstTs,
+      lastTs,
+      seconds,
+      hours: +(seconds / 3600).toFixed(2),
+      tokens: session.tokens || emptyTokenUsage(),
+      spec: session.spec || 'unknown',
+      goal: session.goal || 'unknown',
+      result: session.result || 'unknown',
+    };
+    if (shouldExcludeTaskDetail(row, excludes)) continue;
+    rows.push(row);
+  }
+  rows.sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  return rows.slice(0, limit);
+}
+
 // 报表内嵌数据：每工具按日 / 按日×小时，每项目按日（工作分类由前端按项目行聚合得出），
 // 页面里切换时间范围时就地重算所有数字。秒数取整以减小体积。
 // 语义：按「日桶归属」求和（增量记到后一事件所在天），选「全部」与 CLI 总数完全一致，
@@ -724,18 +1296,21 @@ function buildEmbedData({ toolSeconds, toolDaily, toolDayHour, projRows, range, 
     for (const [k, v] of Array.from(m.entries()).sort()) o[k] = Math.round(v);
     return o;
   };
+  const roundDayHour = (m) => {
+    const dayHour = {};
+    for (const [k, v] of m || []) {
+      const [d, h] = k.split('|');
+      if (!dayHour[d]) dayHour[d] = new Array(24).fill(0);
+      dayHour[d][+h] += Math.round(v);
+    }
+    return dayHour;
+  };
   const tools = {};
   let minDay = null;
   for (const t of Array.from(toolSeconds.keys()).sort((a, b) => toolSeconds.get(b) - toolSeconds.get(a))) {
     const daily = round(toolDaily.get(t));
     for (const k in daily) if (!minDay || k < minDay) minDay = k;
-    const dayHour = {};
-    for (const [k, v] of toolDayHour.get(t)) {
-      const [d, h] = k.split('|');
-      if (!dayHour[d]) dayHour[d] = new Array(24).fill(0);
-      dayHour[d][+h] += Math.round(v);
-    }
-    tools[t] = { daily, dayHour };
+    tools[t] = { daily, dayHour: roundDayHour(toolDayHour.get(t)) };
   }
   const now = new Date();
   const genDay = dayKey(now.getTime() / 1000);
@@ -746,7 +1321,29 @@ function buildEmbedData({ toolSeconds, toolDaily, toolDayHour, projRows, range, 
     daysOpt,
     range,
     tools,
-    projects: projRows.map((r) => ({ tool: r.tool, proj: r.proj, cat: r.cat, daily: round(r.daily) })),
+    nightly: arguments[0].nightly || null,
+    projects: projRows.map((r) => ({
+      tool: r.tool,
+      proj: r.proj,
+      cat: r.cat,
+      daily: round(r.daily),
+      dayHour: roundDayHour(r.dayHour),
+    })),
+    tasks: (arguments[0].tasks || []).map((task) => ({
+      id: task.id,
+      tool: task.tool,
+      project: task.project,
+      cat: task.category,
+      windowDate: task.windowDate,
+      firstTs: task.firstTs,
+      lastTs: task.lastTs,
+      seconds: Math.round(task.seconds || 0),
+      hours: +(task.seconds / 3600).toFixed(2),
+      tokens: task.tokens || emptyTokenUsage(),
+      spec: task.spec || 'unknown',
+      goal: task.goal || 'unknown',
+      result: task.result || 'unknown',
+    })),
   };
 }
 
@@ -812,6 +1409,10 @@ function renderHtml(report, lang) {
   .custom { font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; margin-left:6px; }
   .custom input { border:1px solid var(--line); border-radius:8px; padding:4px 8px; font-size:13px;
                   color:var(--ink); background:var(--card); font-family:inherit; }
+  .task-row { padding:12px 0; border-bottom:1px solid var(--line); font-size:13px; line-height:1.45; }
+  .task-row:last-child { border-bottom:none; }
+  .task-row strong { font-size:14px; }
+  .task-row div + div { margin-top:4px; }
   footer { margin-top:48px; font-size:12px; color:var(--muted); text-align:center; }
 </style>
 </head>
@@ -831,6 +1432,8 @@ function renderHtml(report, lang) {
     <button class="chip" data-preset="d30">${t.controls.d30}</button>
     <button class="chip" data-preset="d90">${t.controls.d90}</button>
     <span class="custom">${t.controls.custom} <input type="date" id="d-since"> ~ <input type="date" id="d-until"></span>
+    <label class="custom"><input type="checkbox" id="night-only"> ${t.nightly}</label>
+    <span class="custom">${t.timeFilter} <input type="time" id="t-start" value="20:00"> ~ <input type="time" id="t-end" value="08:00"></span>
   </div>
 
   <div class="cards" id="cards"></div>
@@ -865,6 +1468,9 @@ function renderHtml(report, lang) {
   <h2>${t.headings.projects}</h2>
   <div class="panel" id="projects"></div>
 
+  <h2>${t.taskDetails}</h2>
+  <div class="panel" id="tasks"></div>
+
   <footer>${t.footer}</footer>
 </div>
 
@@ -896,8 +1502,38 @@ function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDat
 function mondayOf(d) { return addDays(d, -((d.getDay() + 6) % 7)); }
 function inR(k, lo, hi) { return (!lo || k >= lo) && (!hi || k <= hi); }
 function sumRange(daily, lo, hi) { var s = 0; for (var k in daily) if (inR(k, lo, hi)) s += daily[k]; return s; }
+function timeMinutes(s) { var p = (s || '00:00').split(':'); return (+p[0] || 0) * 60 + (+p[1] || 0); }
+function allDay() { return cur.tStart === cur.tEnd; }
+function timeFilterEnabled() { return document.getElementById('night-only').checked; }
+function hourInTime(h) {
+  if (!timeFilterEnabled() || allDay()) return true;
+  var start = timeMinutes(cur.tStart), end = timeMinutes(cur.tEnd), min = h * 60;
+  if (start < end) return min >= start && min < end;
+  return min >= start || min < end;
+}
+function sumDayHours(dayHour, day) {
+  var arr = dayHour && dayHour[day], s = 0;
+  if (!arr) return 0;
+  for (var h = 0; h < 24; h++) if (hourInTime(h)) s += arr[h] || 0;
+  return s;
+}
+function sumRangeTime(item, lo, hi) {
+  if (!timeFilterEnabled() || allDay() || !item.dayHour) return sumRange(item.daily, lo, hi);
+  var s = 0;
+  for (var day in item.dayHour) if (inR(day, lo, hi)) s += sumDayHours(item.dayHour, day);
+  return s;
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+  });
+}
+function tokenText(tokens) {
+  if (!tokens || !tokens.available) return 'tokens n/a';
+  return tokens.total.toLocaleString() + ' ' + T.tokens;
+}
 
-var cur = { since: null, until: null };
+var cur = { since: null, until: null, tStart: '20:00', tEnd: '08:00' };
 
 function stackedBars(keys, tools, valFn, labelFn, height) {
   var max = 1, totals = [], i, t, v;
@@ -925,7 +1561,7 @@ function stackedBars(keys, tools, valFn, labelFn, height) {
 function render() {
   var lo = cur.since, hi = cur.until, i;
   var toolSec = {}, total = 0;
-  TOOLS.forEach(function (t) { toolSec[t] = sumRange(D.tools[t].daily, lo, hi); total += toolSec[t]; });
+  TOOLS.forEach(function (t) { toolSec[t] = sumRangeTime(D.tools[t], lo, hi); total += toolSec[t]; });
   var tools = TOOLS.slice().sort(function (a, b) { return toolSec[b] - toolSec[a]; });
 
   var start = lo && lo > D.minDay ? lo : D.minDay;
@@ -934,7 +1570,8 @@ function render() {
   var spanDays = Math.max(1, Math.round((parseDay(end) - parseDay(start)) / 86400000) + 1);
 
   document.getElementById('range-label').textContent =
-    (lo || hi) ? T.rangeLabel + ' ' + (lo || T.units.earliest) + ' ~ ' + (hi || T.units.today) : T.rangeLabel + ' ' + T.allData;
+    ((lo || hi) ? T.rangeLabel + ' ' + (lo || T.units.earliest) + ' ~ ' + (hi || T.units.today) : T.rangeLabel + ' ' + T.allData) +
+    (!timeFilterEnabled() || allDay() ? '' : ' · ' + T.timeFilter + ' ' + cur.tStart + '~' + cur.tEnd);
 
   // 总览卡片
   var cards = '<div class="card"><div class="card-label">' + T.cards.total + '</div>' +
@@ -965,7 +1602,7 @@ function render() {
   }
   document.getElementById('h-daily').textContent = fmt(T.headings.daily, { n: days.length });
   document.getElementById('chart-daily').innerHTML = stackedBars(days, tools, function (t, k) {
-    return D.tools[t].daily[k] || 0;
+    return (!timeFilterEnabled() || allDay()) ? (D.tools[t].daily[k] || 0) : sumDayHours(D.tools[t].dayHour, k);
   }, function (k) { return k.slice(5).replace('-', '/'); }, 160);
 
   // 周 / 月聚合（只含范围内的天）
@@ -974,10 +1611,11 @@ function render() {
     var w = {}, m = {}, daily = D.tools[t].daily, k;
     for (k in daily) {
       if (!inR(k, lo, hi)) continue;
+      var dayVal = (!timeFilterEnabled() || allDay()) ? daily[k] : sumDayHours(D.tools[t].dayHour, k);
       var wk = dayStr(mondayOf(parseDay(k)));
-      w[wk] = (w[wk] || 0) + daily[k];
+      w[wk] = (w[wk] || 0) + dayVal;
       var mk = k.slice(0, 7);
-      m[mk] = (m[mk] || 0) + daily[k];
+      m[mk] = (m[mk] || 0) + dayVal;
     }
     wkByTool[t] = w;
     moByTool[t] = m;
@@ -1013,7 +1651,7 @@ function render() {
     var dh = D.tools[t].dayHour, k;
     for (k in dh) {
       if (!inR(k, lo, hi)) continue;
-      for (j = 0; j < 24; j++) arr[j] += dh[k][j];
+      for (j = 0; j < 24; j++) if (hourInTime(j)) arr[j] += dh[k][j];
     }
     hourByTool[t] = arr;
   });
@@ -1026,7 +1664,7 @@ function render() {
   // 工作分类（由项目行聚合，口径与 CLI 一致：分类只含具体项目，不含工具并集差额）
   var catSec = {};
   D.projects.forEach(function (p) {
-    var s = sumRange(p.daily, lo, hi);
+    var s = sumRangeTime(p, lo, hi);
     if (s > 0) catSec[p.cat] = (catSec[p.cat] || 0) + s;
   });
   var cats = Object.keys(catSec).sort(function (a, b) { return catSec[b] - catSec[a]; });
@@ -1044,7 +1682,7 @@ function render() {
   // Top 项目
   var rows = [];
   D.projects.forEach(function (p) {
-    var s = sumRange(p.daily, lo, hi);
+    var s = sumRangeTime(p, lo, hi);
     if (s <= 0) return;
     var lastDay = null, k;
     for (k in p.daily) if (inR(k, lo, hi) && (!lastDay || k > lastDay)) lastDay = k;
@@ -1061,6 +1699,28 @@ function render() {
       '<div class="proj-val">' + fmtH(r.sec) + ' <span class="muted">· ' + r.cat + ' · ' + T.projectsRecent + ' ' + r.last.slice(5) + '</span></div></div>';
   });
   document.getElementById('projects').innerHTML = projHtml || '<div class="muted" style="font-size:13px">' + T.units.none + '</div>';
+
+  var taskRows = [];
+  (D.tasks || []).forEach(function (task) {
+    var firstDay = dayStr(new Date(task.firstTs * 1000));
+    var lastDay = dayStr(new Date(task.lastTs * 1000));
+    if (lo && lastDay < lo) return;
+    if (hi && firstDay > hi) return;
+    if (timeFilterEnabled() && !allDay()) {
+      var h = new Date((task.firstTs || task.lastTs) * 1000).getHours();
+      if (!hourInTime(h)) return;
+    }
+    taskRows.push(task);
+  });
+  taskRows.sort(function (a, b) { return b.seconds - a.seconds; });
+  document.getElementById('tasks').innerHTML = taskRows.length ? taskRows.map(function (task) {
+    return '<div class="task-row">' +
+      '<div><strong>' + esc(task.project) + '</strong> <span class="muted">' + esc(task.tool) + ' · ' + fmtH(task.seconds) + ' · ' + esc(tokenText(task.tokens)) + '</span></div>' +
+      '<div><span class="muted">' + T.spec + ':</span> ' + esc(task.spec) + '</div>' +
+      '<div><span class="muted">' + T.goal + ':</span> ' + esc(task.goal) + '</div>' +
+      '<div><span class="muted">' + T.result + ':</span> ' + esc(task.result) + '</div>' +
+    '</div>';
+  }).join('') : '<div class="muted" style="font-size:13px">' + T.units.none + '</div>';
 }
 
 function presetRange(name) {
@@ -1101,19 +1761,44 @@ function onCustom() {
   var s = document.getElementById('d-since').value || null;
   var u = document.getElementById('d-until').value || null;
   if (s && u && s > u) { var tmp = s; s = u; u = tmp; }
+  cur.tStart = document.getElementById('t-start').value || '00:00';
+  cur.tEnd = document.getElementById('t-end').value || '00:00';
   setRange(s, u, null);
 }
 document.getElementById('d-since').addEventListener('change', onCustom);
 document.getElementById('d-until').addEventListener('change', onCustom);
+document.getElementById('t-start').addEventListener('change', onCustom);
+document.getElementById('t-end').addEventListener('change', onCustom);
+document.getElementById('night-only').addEventListener('change', function () {
+  if (this.checked) {
+    document.getElementById('t-start').value = D.nightly && D.nightly.start ? D.nightly.start : '20:00';
+    document.getElementById('t-end').value = D.nightly && D.nightly.end ? D.nightly.end : '08:00';
+  } else {
+    document.getElementById('t-start').value = '20:00';
+    document.getElementById('t-end').value = '08:00';
+  }
+  onCustom();
+});
 
-setRange(null, null, document.querySelector('.chip[data-preset="all"]'));
+if (D.nightly) {
+  var startDay = D.nightly.since ? dayStr(new Date(D.nightly.since)) : null;
+  var endDay = D.nightly.until ? dayStr(new Date(D.nightly.until)) : startDay;
+  document.getElementById('night-only').checked = true;
+  document.getElementById('t-start').value = D.nightly.start || '20:00';
+  document.getElementById('t-end').value = D.nightly.end || '08:00';
+  cur.tStart = document.getElementById('t-start').value;
+  cur.tEnd = document.getElementById('t-end').value;
+  setRange(startDay, endDay, null);
+} else {
+  setRange(null, null, document.querySelector('.chip[data-preset="all"]'));
+}
 </script>
 </body>
 </html>`;
 }
 
 // --json 输出：报表数据序列化为 JSON，方便其他脚本消费
-function renderJson({ toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourly, projRows, catSeconds, range }) {
+function renderJson({ toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourly, projRows, catSeconds, range, tasks, nightly }) {
   const m2o = (m) => Object.fromEntries(Array.from(m.entries()).sort());
   const tools = {};
   for (const [t, sec] of toolSeconds) {
@@ -1141,6 +1826,25 @@ function renderJson({ toolSeconds, toolDaily, toolWeekly, toolMonthly, toolHourl
       category: r.cat,
       firstTs: r.first,
       lastTs: r.last,
+    })),
+    nightly: nightly || null,
+    tokens: sumTokenUsage((tasks || []).map((task) => task.tokens)),
+    tasks: (tasks || []).map((task) => ({
+      tool: task.tool,
+      project: task.project,
+      category: task.category,
+      sessionId: task.sessionId,
+      turnId: task.turnId,
+      windowDate: task.windowDate,
+      seconds: Math.round(task.seconds),
+      hours: +(task.seconds / 3600).toFixed(2),
+      tokens: task.tokens || emptyTokenUsage(),
+      spec: task.spec || 'unknown',
+      goal: task.goal || 'unknown',
+      result: task.result || 'unknown',
+      firstTs: task.firstTs,
+      lastTs: task.lastTs,
+      sourceFile: task.sourceFile,
     })),
   }, null, 2);
 }
@@ -1171,6 +1875,11 @@ ${tr('en').helpOptions}
       --lang <en|cn>    UI/help language for the generated report and CLI messages
       --llm-category    Ask an OpenAI-compatible LLM to improve category mapping
       --llm-model <m>   Model for --llm-category (or use CCHOUR_LLM_MODEL)
+      --add-exclude-project <name>
+                        Globally exclude a project/repo name from future reports
+      --add-exclude-path <path>
+                        Globally exclude sessions under a path from future reports
+      --list-excludes   Show global excludes from ~/.cchour/excludes.json
       --open            Open the generated report in the default browser
       --json            Output JSON instead of HTML
   -h, --help            Show help
@@ -1197,6 +1906,11 @@ ${tr('cn').helpOptions}
       --lang <en|cn>    生成报表与 CLI 提示语言
       --llm-category    使用 OpenAI 兼容 LLM 改进分类映射
       --llm-model <m>   --llm-category 使用的模型（或环境变量 CCHOUR_LLM_MODEL）
+      --add-exclude-project <名称>
+                        全局排除某个项目/repo 名称
+      --add-exclude-path <路径>
+                        全局排除某个路径下的会话
+      --list-excludes   显示 ~/.cchour/excludes.json 中的全局排除项
       --open            生成后用系统默认浏览器打开
       --json            输出 JSON 而非 HTML（默认打到 stdout，配 -o 则写文件）
   -h, --help            显示帮助
@@ -1217,6 +1931,62 @@ function parseDayArg(name, s, lang) {
     process.exit(1);
   }
   return d;
+}
+
+function parseClockArg(name, s, lang) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s || '');
+  const h = m ? +m[1] : NaN;
+  const min = m ? +m[2] : NaN;
+  if (!m || h < 0 || h > 23 || min < 0 || min > 59) {
+    console.error(`${name} expects HH:MM, got: ${s}`);
+    process.exit(1);
+  }
+  return { h, min };
+}
+
+function isInTimeWindow(hour, minute, startHour, startMinute, endHour, endMinute) {
+  const cur = hour * 60 + minute;
+  const start = startHour * 60 + startMinute;
+  const end = endHour * 60 + endMinute;
+  if (start === end) return true;
+  if (start < end) return cur >= start && cur < end;
+  return cur >= start || cur < end;
+}
+
+function expandNightlyRange(value, startClock = '20:00', endClock = '08:00', now = new Date(), lang = 'cn') {
+  const start = parseClockArg('--night-start', startClock, lang);
+  const end = parseClockArg('--night-end', endClock, lang);
+  let base;
+  if (!value || value === true || value === 'last') {
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startMin = start.h * 60 + start.min;
+    const endMin = end.h * 60 + end.min;
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const offset = startMin >= endMin
+      ? (nowMin >= endMin ? -1 : -2)
+      : (nowMin >= endMin ? 0 : -1);
+    base = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
+  } else if (value === 'today') {
+    base = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  } else {
+    base = parseDayArg('--nightly', value, lang);
+  }
+  const since = new Date(base.getFullYear(), base.getMonth(), base.getDate(), start.h, start.min, 0, 0);
+  const crossesMidnight = (start.h * 60 + start.min) >= (end.h * 60 + end.min);
+  const endBase = crossesMidnight
+    ? new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1)
+    : base;
+  const until = new Date(endBase.getFullYear(), endBase.getMonth(), endBase.getDate(), end.h, end.min, 0, 0);
+  return { since, until, startClock, endClock };
+}
+
+function nightWindowDate(ts, startHour = 20, endHour = 8) {
+  const d = new Date(ts * 1000);
+  const base = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (startHour > endHour && d.getHours() < endHour) {
+    base.setDate(base.getDate() - 1);
+  }
+  return dayKey(base.getTime() / 1000);
 }
 
 // --week/--month 展开成 since/until。周一为一周起点（与周图一致），范围不超过今天。
@@ -1270,7 +2040,8 @@ function expandShortcutRange(opts) {
 function parseArgs(argv) {
   const opts = {
     output: 'cchour-report.html', outputSet: false, days: 30, open: false, json: false,
-    since: null, until: null, week: null, month: null, lang: 'cn', llmCategory: false, llmModel: process.env.CCHOUR_LLM_MODEL || '',
+    since: null, until: null, week: null, month: null,
+    lang: 'cn', llmCategory: false, llmModel: process.env.CCHOUR_LLM_MODEL || '', excludeAction: null,
   };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--lang' && argv[i + 1]) {
@@ -1289,7 +2060,8 @@ function parseArgs(argv) {
     else if (a === '--week' || a === '--month') {
       const next = argv[i + 1];
       opts[a.slice(2)] = next && !next.startsWith('-') ? argv[++i] : true;
-    } else if (a === '--lang') {
+    }
+    else if (a === '--lang') {
       const next = (argv[++i] || '').toLowerCase();
       if (next !== 'cn' && next !== 'en') {
         console.error(`--lang must be en or cn, got: ${next || '(empty)'}`);
@@ -1298,6 +2070,9 @@ function parseArgs(argv) {
       opts.lang = next;
     } else if (a === '--llm-category') opts.llmCategory = true;
     else if (a === '--llm-model') opts.llmModel = argv[++i] || '';
+    else if (a === '--add-exclude-project') opts.excludeAction = { type: 'project', value: argv[++i] || '' };
+    else if (a === '--add-exclude-path') opts.excludeAction = { type: 'path', value: argv[++i] || '' };
+    else if (a === '--list-excludes') opts.excludeAction = { type: 'list' };
     else if (a === '--open') opts.open = true;
     else if (a === '--json') opts.json = true;
     else if (a === '-h' || a === '--help') {
@@ -1467,10 +2242,25 @@ async function main() {
   const t = tr(opts.lang);
   const t0 = Date.now();
 
+  if (opts.excludeAction) {
+    const current = loadExcludeConfig();
+    if (opts.excludeAction.type === 'list') {
+      console.log(JSON.stringify(current, null, 2));
+      return;
+    }
+    const next = addExcludeEntry(current, opts.excludeAction.type, opts.excludeAction.value);
+    saveExcludeConfig(next);
+    console.error(`${t.statusGenerated} ${EXCLUDES_FILE}`);
+    console.log(JSON.stringify(next, null, 2));
+    return;
+  }
+
   console.error(t.statusScanning);
   const rules = loadCategories(opts.lang);
   const projectCategorize = makeCategorize(rules);
-  const { data, catOverride, llmCandidates } = collect(makeContentCategorize(rules), t);
+  const contentCategorize = makeContentCategorize(rules);
+  const excludes = loadExcludeConfig();
+  const { data, catOverride, llmCandidates } = collect(contentCategorize, t, excludes);
   await applyLlmCategoryMapping(data, catOverride, llmCandidates, projectCategorize, createLlmCategoryClient(opts, rules, t), t);
 
   // --since/--until：按本地时区过滤事件，until 含当天整天
@@ -1495,6 +2285,8 @@ async function main() {
   const report = buildReport(data, projectCategorize, catOverride, opts.days, {
     since: opts.since, until: opts.until,
   }, t.other);
+  const detailSessions = collectDetailedSessions(contentCategorize, projectCategorize, t, excludes);
+  report.tasks = buildTaskRowsForReport(detailSessions, lo, hi, 300, excludes);
   logOtherSummary(report, t);
 
   const sorted = Array.from(report.toolSeconds.entries()).sort((a, b) => b[1] - a[1]);
@@ -1526,7 +2318,29 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err && err.message ? err.message : String(err));
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err && err.message ? err.message : String(err));
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  activeSeconds,
+  bucketActive,
+  buildActiveSegments,
+  buildTaskRowsForReport,
+  dayKey,
+  addExcludeEntry,
+  expandNightlyRange,
+  extractTaskSummary,
+  extractTokenUsage,
+  isInTimeWindow,
+  normalizeExcludeConfig,
+  parseArgs,
+  renderJson,
+  renderHtml,
+  segmentOverlapSeconds,
+  shouldExcludeSession,
+  sumTokenUsage,
+};

@@ -12,7 +12,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "start": "node bin/cchour.js"
+    "start": "node bin/cchour.js",
+    "test": "node --test"
   },
   "repository": {
     "type": "git",
