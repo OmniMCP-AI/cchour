@@ -49,7 +49,7 @@ const I18N = {
     activeFormula: '活跃时长 = 相邻操作间隔 ≤ 15 分钟的累计',
     timeFilter: '时间过滤',
     nightly: '夜间',
-    taskDetails: 'Agent 任务明细',
+    taskDetails: 'Agent 工作流摘要',
     spec: 'Spec',
     goal: 'Goal',
     result: 'Result',
@@ -137,9 +137,10 @@ const I18N = {
       infra: '基础设施',
     },
     llm: {
-      missingApiKey: '启用 --llm-category 需要环境变量 OPENAI_API_KEY',
-      missingModel: '启用 --llm-category 需要 --llm-model 或环境变量 CCHOUR_LLM_MODEL',
+      missingApiKey: '启用 LLM 功能需要环境变量 OPENAI_API_KEY',
+      missingModel: '启用 LLM 功能需要 --llm-model 或环境变量 CCHOUR_LLM_MODEL',
       classifying: '使用 LLM 改进分类映射…',
+      summarizing: '使用 LLM 改进工作流摘要…',
       summary: 'LLM 已重分类 {projects} 个项目，新增/使用 {categories} 个分类',
       otherSummary: '当前“其他”仍有 {projects} 个项目，共 {hours} 小时。前几个：{top}',
     },
@@ -155,7 +156,7 @@ const I18N = {
     activeFormula: 'Active time = accumulated gaps between actions <= 15 minutes',
     timeFilter: 'Time filter',
     nightly: 'Nightly',
-    taskDetails: 'Agent task details',
+    taskDetails: 'Agent workflow summaries',
     spec: 'Spec',
     goal: 'Goal',
     result: 'Result',
@@ -243,9 +244,10 @@ const I18N = {
       infra: 'Infrastructure',
     },
     llm: {
-      missingApiKey: '--llm-category requires OPENAI_API_KEY',
-      missingModel: '--llm-category requires --llm-model or CCHOUR_LLM_MODEL',
+      missingApiKey: 'LLM options require OPENAI_API_KEY',
+      missingModel: 'LLM options require --llm-model or CCHOUR_LLM_MODEL',
       classifying: 'Using LLM to improve category mapping...',
+      summarizing: 'Using LLM to improve workflow summaries...',
       summary: 'LLM reclassified {projects} projects across {categories} categories',
       otherSummary: 'Other still has {projects} projects totaling {hours} hours. Top few: {top}',
     },
@@ -807,12 +809,29 @@ function inferGoal(spec) {
   return clipText(m ? m[1] : s, 220) || 'unknown';
 }
 
+function extractWorkflowCommandGoal(text) {
+  const body = String(text || '');
+  const m = body.match(/(?:^|\r?\n)\s*\/(?:goal|loop)\s+([^\r\n]{4,260})/i);
+  return m ? clipText(m[1], 220) : '';
+}
+
+function extractWorkflowCommandSpec(text) {
+  const body = String(text || '');
+  const m = body.match(/(?:^|\r?\n)\s*\/spec\s+([^\r\n]{4,360})/i);
+  return m ? clipText(m[1], 320) : '';
+}
+
 function extractTaskSummary(session) {
-  const spec = clipText((session.userTexts || []).find(Boolean), 320) || 'unknown';
-  const explicitGoal = clipText(session.goal, 220);
-  const goal = explicitGoal || (spec === 'unknown' ? 'unknown' : inferGoal(spec));
+  const texts = [...(session.userTexts || []), ...(session.assistantTexts || [])];
+  const explicitSpec = clipText(session.spec, 320)
+    || texts.map(extractWorkflowCommandSpec).find(Boolean);
+  const spec = explicitSpec || 'unknown';
+  const explicitGoal = clipText(session.goal, 220)
+    || (session.agentWorkflow ? '' : texts.map(extractWorkflowCommandGoal).find(Boolean));
+  const goal = explicitGoal || 'unknown';
   const result = clipText(session.result || [...(session.assistantTexts || [])].reverse().find(Boolean), 320) || 'unknown';
-  return { spec, goal, result };
+  const agentWorkflow = Boolean(session.agentWorkflow || explicitSpec || explicitGoal);
+  return { spec, goal, result, agentWorkflow };
 }
 
 function pad2(n) {
@@ -983,6 +1002,8 @@ function scanSessionFile(file, tool, project, category, textExtractor) {
     const text = textExtractor ? textExtractor(j) : null;
     if (text && text.role === 'user' && text.text && userTexts.length < 5 && userTexts[userTexts.length - 1] !== text.text) {
       userTexts.push(text.text);
+      const workflowGoal = extractWorkflowCommandGoal(text.text);
+      if (workflowGoal && !goal) goal = workflowGoal;
     }
     if (text && text.role === 'assistant' && text.text) {
       assistantTexts.push(text.text);
@@ -1007,6 +1028,7 @@ function scanSessionFile(file, tool, project, category, textExtractor) {
     assistantTexts,
     goal,
     result,
+    agentWorkflow: Boolean(goal),
   };
 }
 
@@ -1088,6 +1110,7 @@ function extractCodexTaskDetails(file, project, category) {
         turn.goalStatus = p.goal.status || turn.goalStatus;
         turn.goalTokensUsed = p.goal.tokensUsed == null ? turn.goalTokensUsed : p.goal.tokensUsed;
         turn.goalTimeUsedSeconds = p.goal.timeUsedSeconds == null ? turn.goalTimeUsedSeconds : p.goal.timeUsedSeconds;
+        turn.agentWorkflow = true;
       }
       if (j.type === 'event_msg' && p.type === 'task_complete') {
         sawBoundary = true;
@@ -1100,6 +1123,11 @@ function extractCodexTaskDetails(file, project, category) {
       if (text && text.role === 'user' && text.text) {
         if (fallbackTexts.userTexts[fallbackTexts.userTexts.length - 1] !== text.text) fallbackTexts.userTexts.push(text.text);
         if (turn.userTexts[turn.userTexts.length - 1] !== text.text) turn.userTexts.push(text.text);
+        const workflowGoal = extractWorkflowCommandGoal(text.text);
+        if (workflowGoal && !turn.goal) {
+          turn.goal = workflowGoal;
+          turn.agentWorkflow = true;
+        }
       }
       if (text && text.role === 'assistant' && text.text) {
         fallbackTexts.assistantTexts.push(text.text);
@@ -1257,10 +1285,78 @@ function buildNightlyTasks(sessions, since, until, startClock = '20:00', endCloc
   return tasks;
 }
 
+function mergeWorkflowRows(rows) {
+  const byKey = new Map();
+  for (const row of rows) {
+    const key = [row.tool, row.project, row.spec || 'unknown', row.goal || 'unknown'].join('\0');
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, { ...row, tokens: row.tokens || emptyTokenUsage() });
+      continue;
+    }
+    existing.firstTs = Math.min(existing.firstTs || row.firstTs, row.firstTs || existing.firstTs);
+    existing.lastTs = Math.max(existing.lastTs || row.lastTs, row.lastTs || existing.lastTs);
+    existing.seconds += row.seconds || 0;
+    existing.hours = +(existing.seconds / 3600).toFixed(2);
+    existing.tokens = sumTokenUsage([existing.tokens, row.tokens]);
+    if ((row.lastTs || 0) >= (existing.lastTs || 0) && row.result && row.result !== 'unknown') {
+      existing.result = row.result;
+    }
+  }
+  return Array.from(byKey.values());
+}
+
+function workflowSummaryPayload(rows) {
+  return (rows || []).map((row, i) => ({
+    id: String(row.id || `row-${i + 1}`),
+    tool: row.tool || '',
+    project: row.project || '',
+    spec: row.spec || 'unknown',
+    goal: row.goal || 'unknown',
+    result: row.result || 'unknown',
+    hours: row.hours == null ? +(+(row.seconds || 0) / 3600).toFixed(2) : row.hours,
+    tokens: row.tokens && row.tokens.available ? row.tokens.total : null,
+  }));
+}
+
+function cleanWorkflowSummaryField(value, fallback, maxLen) {
+  const text = clipText(value, maxLen);
+  if (!text || text === 'unknown') return fallback || 'unknown';
+  return text;
+}
+
+async function applyLlmWorkflowSummaries(rows, llmSummarize) {
+  if (!llmSummarize || !rows || !rows.length) return rows || [];
+  const payload = workflowSummaryPayload(rows);
+  try {
+    const mapping = await llmSummarize(payload);
+    if (!mapping || !mapping.size) return rows;
+    return rows.map((row, i) => {
+      const id = String(row.id || `row-${i + 1}`);
+      const next = mapping.get(id);
+      if (!next) return row;
+      return {
+        ...row,
+        spec: cleanWorkflowSummaryField(next.spec, row.spec || 'unknown', 320),
+        goal: cleanWorkflowSummaryField(next.goal, row.goal || 'unknown', 220),
+        result: cleanWorkflowSummaryField(next.result, row.result || 'unknown', 320),
+      };
+    });
+  } catch {
+    return rows;
+  }
+}
+
 function buildTaskRowsForReport(sessions, lo = -Infinity, hi = Infinity, limit = 300, excludes = normalizeExcludeConfig()) {
   const rows = [];
   for (const session of sessions) {
     if (shouldExcludeTaskDetail(session, excludes)) continue;
+    const hasWorkflowEvidence = Boolean(
+      session.agentWorkflow
+      || (session.spec && session.spec !== 'unknown')
+      || (session.goal && session.goal !== 'unknown')
+    );
+    if (!hasWorkflowEvidence) continue;
     const segments = buildActiveSegments(session.timestamps || []);
     const seconds = Number.isFinite(lo) || Number.isFinite(hi)
       ? segments.reduce((sum, seg) => sum + segmentOverlapSeconds(seg, lo, hi), 0)
@@ -1282,8 +1378,9 @@ function buildTaskRowsForReport(sessions, lo = -Infinity, hi = Infinity, limit =
     if (shouldExcludeTaskDetail(row, excludes)) continue;
     rows.push(row);
   }
-  rows.sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
-  return rows.slice(0, limit);
+  const merged = mergeWorkflowRows(rows);
+  merged.sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  return merged.slice(0, limit);
 }
 
 // 报表内嵌数据：每工具按日 / 按日×小时，每项目按日（工作分类由前端按项目行聚合得出），
@@ -1874,7 +1971,9 @@ ${tr('en').helpOptions}
                         YYYY-MM=a specific month
       --lang <en|cn>    UI/help language for the generated report and CLI messages
       --llm-category    Ask an OpenAI-compatible LLM to improve category mapping
-      --llm-model <m>   Model for --llm-category (or use CCHOUR_LLM_MODEL)
+      --llm-workflow-summary
+                        Ask an OpenAI-compatible LLM to rewrite workflow summaries
+      --llm-model <m>   Model for LLM options (or use CCHOUR_LLM_MODEL)
       --add-exclude-project <name>
                         Globally exclude a project/repo name from future reports
       --add-exclude-path <path>
@@ -1905,7 +2004,9 @@ ${tr('cn').helpOptions}
       --month [M]       月报快捷范围：不带值=本月；last=上个整月；YYYY-MM=指定月
       --lang <en|cn>    生成报表与 CLI 提示语言
       --llm-category    使用 OpenAI 兼容 LLM 改进分类映射
-      --llm-model <m>   --llm-category 使用的模型（或环境变量 CCHOUR_LLM_MODEL）
+      --llm-workflow-summary
+                        使用 OpenAI 兼容 LLM 改写工作流摘要
+      --llm-model <m>   LLM 功能使用的模型（或环境变量 CCHOUR_LLM_MODEL）
       --add-exclude-project <名称>
                         全局排除某个项目/repo 名称
       --add-exclude-path <路径>
@@ -2041,7 +2142,8 @@ function parseArgs(argv) {
   const opts = {
     output: 'cchour-report.html', outputSet: false, days: 30, open: false, json: false,
     since: null, until: null, week: null, month: null,
-    lang: 'cn', llmCategory: false, llmModel: process.env.CCHOUR_LLM_MODEL || '', excludeAction: null,
+    lang: 'cn', llmCategory: false, llmWorkflowSummary: false,
+    llmModel: process.env.CCHOUR_LLM_MODEL || '', excludeAction: null,
   };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--lang' && argv[i + 1]) {
@@ -2069,6 +2171,7 @@ function parseArgs(argv) {
       }
       opts.lang = next;
     } else if (a === '--llm-category') opts.llmCategory = true;
+    else if (a === '--llm-workflow-summary') opts.llmWorkflowSummary = true;
     else if (a === '--llm-model') opts.llmModel = argv[++i] || '';
     else if (a === '--add-exclude-project') opts.excludeAction = { type: 'project', value: argv[++i] || '' };
     else if (a === '--add-exclude-path') opts.excludeAction = { type: 'path', value: argv[++i] || '' };
@@ -2195,6 +2298,94 @@ ${JSON.stringify(payload, null, 2)}`;
   };
 }
 
+function createLlmWorkflowSummaryClient(opts, t) {
+  if (!opts.llmWorkflowSummary) return null;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.error(t.llm.missingApiKey);
+    process.exit(1);
+  }
+  const model = opts.llmModel;
+  if (!model) {
+    console.error(t.llm.missingModel);
+    process.exit(1);
+  }
+  const base = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const url = base.endsWith('/v1') ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
+
+  return async (rows) => {
+    const prompt = opts.lang === 'en'
+      ? `Rewrite AI agent workflow report rows for a concise engineering time report.
+
+Important:
+1. Use only the provided row fields. Do not invent specs, goals, results, paths, commits, files, or tests.
+2. If a field is "unknown" and there is not enough evidence, keep it as "unknown".
+3. Keep each field short and specific. Prefer one sentence or phrase.
+4. Preserve the row id exactly.
+5. Return JSON only.
+
+Return this shape:
+{"summaries":[{"id":"row id","spec":"short spec or unknown","goal":"short goal or unknown","result":"short result or unknown"}]}
+
+Rows:
+${JSON.stringify(rows, null, 2)}`
+      : `请把 AI agent 工作流报表行改写成更适合工程时间报表的简洁摘要。
+
+重要规则：
+1. 只能使用提供的字段，不要编造 spec、goal、result、路径、commit、文件或测试。
+2. 如果字段是 "unknown" 且证据不足，保持 "unknown"。
+3. 每个字段保持简短、具体，优先一句话或短语。
+4. 必须原样保留 row id。
+5. 只返回 JSON。
+
+返回格式：
+{"summaries":[{"id":"row id","spec":"简短 spec 或 unknown","goal":"简短 goal 或 unknown","result":"简短 result 或 unknown"}]}
+
+报表行：
+${JSON.stringify(rows, null, 2)}`;
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        messages: [
+          { role: 'system', content: 'You rewrite report rows. Respond with JSON only.' },
+          { role: 'user', content: prompt },
+        ],
+      }),
+    });
+    if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
+    const data = await res.json();
+    const text = data && data.choices && data.choices[0] && data.choices[0].message
+      ? data.choices[0].message.content
+      : '';
+    const m = String(text).match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    let parsed;
+    try {
+      parsed = JSON.parse(m[0]);
+    } catch {
+      return null;
+    }
+    if (!parsed || !Array.isArray(parsed.summaries)) return null;
+    const mapping = new Map();
+    for (const item of parsed.summaries) {
+      if (!item || !item.id) continue;
+      mapping.set(String(item.id), {
+        spec: item.spec,
+        goal: item.goal,
+        result: item.result,
+      });
+    }
+    return mapping;
+  };
+}
+
 async function applyLlmCategoryMapping(data, catOverride, llmCandidates, categorize, llmClassify, t) {
   if (!llmClassify) return;
   console.error(t.llm.classifying);
@@ -2287,6 +2478,10 @@ async function main() {
   }, t.other);
   const detailSessions = collectDetailedSessions(contentCategorize, projectCategorize, t, excludes);
   report.tasks = buildTaskRowsForReport(detailSessions, lo, hi, 300, excludes);
+  if (opts.llmWorkflowSummary && report.tasks.length) {
+    console.error(t.llm.summarizing);
+    report.tasks = await applyLlmWorkflowSummaries(report.tasks, createLlmWorkflowSummaryClient(opts, t));
+  }
   logOtherSummary(report, t);
 
   const sorted = Array.from(report.toolSeconds.entries()).sort((a, b) => b[1] - a[1]);
@@ -2327,6 +2522,7 @@ if (require.main === module) {
 
 module.exports = {
   activeSeconds,
+  applyLlmWorkflowSummaries,
   bucketActive,
   buildActiveSegments,
   buildTaskRowsForReport,

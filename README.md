@@ -51,6 +51,8 @@ cchour --json             # print report data as JSON to stdout
 cchour --json -o out.json # ...or write it to a file
 cchour --llm-category --llm-model gpt-5.4-mini --lang en
                          # use an OpenAI-compatible LLM to improve category mapping
+cchour --llm-workflow-summary --llm-model gpt-5.4-mini
+                         # use an OpenAI-compatible LLM to rewrite workflow summaries
 cchour --add-exclude-project cchour
                          # globally hide a project/repo from future reports
 cchour --add-exclude-path ~/work/ai/private-repo
@@ -134,9 +136,9 @@ Quote wildcard arguments in the shell, e.g. `'~/work/ai/private-repo/*'`, so the
 saved as patterns instead of being expanded by your shell before `cchour` sees
 them.
 
-Agent task details use the same excludes. If a task's spec, goal, result, user
-text, or assistant text mentions an excluded path pattern such as
-`~/work/ai/private-repo/*`, the whole task detail row is hidden from the HTML and
+Agent workflow summaries use the same excludes. If a summary's spec, goal,
+result, user text, or assistant text mentions an excluded path pattern such as
+`~/work/ai/private-repo/*`, the whole summary row is hidden from the HTML and
 JSON report.
 
 ### Report language
@@ -227,6 +229,25 @@ Behavior:
   sparse.
 - The CLI prints a short summary like `LLM reclassified 42 projects across 7
   categories` when remapping succeeds.
+
+### LLM-assisted workflow summaries
+
+`--llm-workflow-summary` can ask the same OpenAI-compatible model to rewrite
+Agent workflow summaries into shorter spec/goal/result text:
+
+```bash
+cchour --llm-workflow-summary --llm-model gpt-5.4-mini
+```
+
+Privacy boundary:
+
+- This is opt-in. Without the flag, workflow summaries are generated locally.
+- Global excludes are applied before any workflow summary row is sent to the
+  model.
+- The model receives only the already-filtered workflow rows: project, tool,
+  spec, goal, result, hours, and token total. Full raw session logs are not sent.
+- The prompt tells the model not to invent missing specs/goals/results; unknown
+  fields should stay `unknown` unless the row itself contains evidence.
 
 ## Requirements
 

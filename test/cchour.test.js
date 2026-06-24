@@ -84,14 +84,134 @@ test('segment overlaps exact nightly range', () => {
   assert.equal(cchour.segmentOverlapSeconds({ start: end + 1, end: end + 30 }, start, end), 0);
 });
 
-test('extractTaskSummary derives spec goal and result without fabricating missing data', () => {
+test('extractTaskSummary uses explicit workflow commands without fabricating missing data', () => {
   const s = cchour.extractTaskSummary({
-    userTexts: ['i need report nightly agent task details, including spec, goal, and result'],
+    userTexts: ['/spec report nightly agent task details, including spec, goal, and result\n/goal show agent workflow summaries'],
     assistantTexts: ['Implemented nightly report support and verified tests.'],
   });
-  assert.equal(s.spec, 'i need report nightly agent task details, including spec, goal, and result');
-  assert.equal(s.goal, 'report nightly agent task details, including spec, goal, and result');
+  assert.equal(s.spec, 'report nightly agent task details, including spec, goal, and result');
+  assert.equal(s.goal, 'show agent workflow summaries');
   assert.equal(s.result, 'Implemented nightly report support and verified tests.');
+  assert.equal(s.agentWorkflow, true);
+});
+
+test('workflow summary does not infer spec and goal from generic recent prompts', () => {
+  const firstTs = new Date(2026, 5, 23, 21, 0).getTime() / 1000;
+  const rows = cchour.buildTaskRowsForReport([{
+    id: 'recent-chat',
+    tool: 'Codex',
+    project: 'excelize-mcp',
+    category: 'Product',
+    firstTs,
+    lastTs: firstTs + 120,
+    timestamps: [firstTs, firstTs + 120],
+    tokens: { available: true, total: 123, input: 100, cachedInput: 0, output: 23, reasoningOutput: 0 },
+    userTexts: ['go implement them'],
+    assistantTexts: ['Implemented the requested changes.'],
+  }], -Infinity, Infinity);
+
+  assert.equal(rows.length, 0);
+});
+
+test('workflow summary ignores pasted Spec Goal Result labels from ordinary chat', () => {
+  const firstTs = new Date(2026, 5, 23, 21, 0).getTime() / 1000;
+  const summary = cchour.extractTaskSummary({
+    userTexts: ['Spec: go implement them\nGoal: go implement them\nResult: changed two files'],
+    assistantTexts: ['I will inspect the extractor.'],
+  });
+  const rows = cchour.buildTaskRowsForReport([{
+    id: 'pasted-labels',
+    tool: 'Codex',
+    project: 'cchour',
+    category: 'Product',
+    firstTs,
+    lastTs: firstTs + 120,
+    timestamps: [firstTs, firstTs + 120],
+    tokens: { available: true, total: 123, input: 100, cachedInput: 0, output: 23, reasoningOutput: 0 },
+    userTexts: ['Spec: go implement them\nGoal: go implement them\nResult: changed two files'],
+    assistantTexts: ['I will inspect the extractor.'],
+    ...summary,
+  }], -Infinity, Infinity);
+
+  assert.equal(summary.spec, 'unknown');
+  assert.equal(summary.goal, 'unknown');
+  assert.equal(rows.length, 0);
+});
+
+test('workflow summary keeps explicit generated goals as separate rows', () => {
+  const firstTs = new Date(2026, 5, 23, 21, 0).getTime() / 1000;
+  const rows = cchour.buildTaskRowsForReport([
+    {
+      id: 'goal-1',
+      tool: 'Codex',
+      project: 'excelize-mcp',
+      category: 'Product',
+      firstTs,
+      lastTs: firstTs + 120,
+      timestamps: [firstTs, firstTs + 120],
+      tokens: { available: true, total: 100, input: 60, cachedInput: 0, output: 40, reasoningOutput: 0 },
+      goal: 'add PostgreSQL allowlist table',
+      result: 'Added sheet_engine_allowlist and tests.',
+      agentWorkflow: true,
+    },
+    {
+      id: 'goal-2',
+      tool: 'Codex',
+      project: 'excelize-mcp',
+      category: 'Product',
+      firstTs: firstTs + 300,
+      lastTs: firstTs + 420,
+      timestamps: [firstTs + 300, firstTs + 420],
+      tokens: { available: true, total: 200, input: 90, cachedInput: 0, output: 110, reasoningOutput: 0 },
+      goal: 'compile typed same-sheet lookups',
+      result: 'Implemented typed VLOOKUP and XLOOKUP exact-match support.',
+      agentWorkflow: true,
+    },
+  ], -Infinity, Infinity);
+
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map((r) => r.goal).sort(), [
+    'add PostgreSQL allowlist table',
+    'compile typed same-sheet lookups',
+  ]);
+  assert.equal(rows[0].spec, 'unknown');
+});
+
+test('workflow summary merges repeated rows for the same project and goal', () => {
+  const firstTs = new Date(2026, 5, 23, 21, 0).getTime() / 1000;
+  const rows = cchour.buildTaskRowsForReport([
+    {
+      id: 'goal-1-a',
+      tool: 'Codex',
+      project: 'maybe-gateway-overlay',
+      category: 'Product',
+      firstTs,
+      lastTs: firstTs + 120,
+      timestamps: [firstTs, firstTs + 120],
+      tokens: { available: true, total: 100, input: 60, cachedInput: 0, output: 40, reasoningOutput: 0 },
+      goal: 'verify local Hermes integration',
+      result: 'First verification partially passed.',
+      agentWorkflow: true,
+    },
+    {
+      id: 'goal-1-b',
+      tool: 'Codex',
+      project: 'maybe-gateway-overlay',
+      category: 'Product',
+      firstTs: firstTs + 300,
+      lastTs: firstTs + 420,
+      timestamps: [firstTs + 300, firstTs + 420],
+      tokens: { available: true, total: 200, input: 90, cachedInput: 0, output: 110, reasoningOutput: 0 },
+      goal: 'verify local Hermes integration',
+      result: 'Final verification passed.',
+      agentWorkflow: true,
+    },
+  ], -Infinity, Infinity);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].seconds, 240);
+  assert.equal(rows[0].tokens.total, 300);
+  assert.equal(rows[0].result, 'Final verification passed.');
 });
 
 test('extractTaskSummary returns unknown fields for empty sessions', () => {
@@ -99,6 +219,7 @@ test('extractTaskSummary returns unknown fields for empty sessions', () => {
     spec: 'unknown',
     goal: 'unknown',
     result: 'unknown',
+    agentWorkflow: false,
   });
 });
 
@@ -232,4 +353,48 @@ test('parseArgs supports global exclude management commands', () => {
     value: '~/work/private',
   });
   assert.equal(cchour.parseArgs(['--list-excludes']).excludeAction.type, 'list');
+});
+
+test('parseArgs supports LLM workflow summary opt-in', () => {
+  assert.equal(cchour.parseArgs(['--llm-workflow-summary']).llmWorkflowSummary, true);
+});
+
+test('applyLlmWorkflowSummaries updates rows by id without changing metrics', async () => {
+  const rows = [{
+    id: 'goal-1',
+    tool: 'Codex',
+    project: 'demo',
+    category: 'Product',
+    firstTs: 100,
+    lastTs: 220,
+    seconds: 120,
+    hours: 0.03,
+    tokens: { available: true, total: 123, input: 100, cachedInput: 0, output: 23, reasoningOutput: 0 },
+    spec: 'unknown',
+    goal: 'reinstall and verify via run e2e test from ui->play-be ->gateway overlay ->hermes',
+    result: 'local verification passed after reinstall',
+  }];
+
+  const next = await cchour.applyLlmWorkflowSummaries(rows, async (payload) => {
+    assert.deepEqual(payload, [{
+      id: 'goal-1',
+      tool: 'Codex',
+      project: 'demo',
+      spec: 'unknown',
+      goal: 'reinstall and verify via run e2e test from ui->play-be ->gateway overlay ->hermes',
+      result: 'local verification passed after reinstall',
+      hours: 0.03,
+      tokens: 123,
+    }]);
+    return new Map([['goal-1', {
+      spec: 'unknown',
+      goal: 'Verify the gateway overlay end-to-end with Hermes',
+      result: 'Reinstalled the local plugin and confirmed the request flow works.',
+    }]]);
+  });
+
+  assert.equal(next[0].goal, 'Verify the gateway overlay end-to-end with Hermes');
+  assert.equal(next[0].result, 'Reinstalled the local plugin and confirmed the request flow works.');
+  assert.equal(next[0].seconds, 120);
+  assert.equal(next[0].tokens.total, 123);
 });
