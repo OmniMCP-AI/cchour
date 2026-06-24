@@ -51,14 +51,14 @@ cchour --json             # print report data as JSON to stdout
 cchour --json -o out.json # ...or write it to a file
 cchour --llm-category --llm-model gpt-5.4-mini --lang en
                          # use an OpenAI-compatible LLM to improve category mapping
-cchour --add-exclude-project outofofficehour
+cchour --add-exclude-project cchour
                          # globally hide a project/repo from future reports
 cchour --add-exclude-path ~/work/ai/private-repo
                          # globally hide sessions exactly at a path
 cchour --add-exclude-path '~/work/ai/private-repo/*'
                          # hide sessions under that folder/repo
-cchour --add-exclude-path '/Users/dengwei/*'
-                         # hide all child folders/repos under /Users/dengwei
+cchour --add-exclude-path '~/*'
+                         # hide all child folders/repos under your home directory
 cchour --list-excludes   # show global excludes
 ```
 
@@ -98,7 +98,7 @@ cchour --add-exclude-project my-private-repo
 cchour --add-exclude-project 'tmp-*'
 cchour --add-exclude-path ~/work/ai/private-repo
 cchour --add-exclude-path '~/work/ai/private-repo/*'
-cchour --add-exclude-path '/Users/me/*'
+cchour --add-exclude-path '~/*'
 cchour --list-excludes
 ```
 
@@ -106,22 +106,38 @@ Excludes are stored locally in `~/.cchour/excludes.json`. Project excludes match
 the report project/repo name case-insensitively. Path excludes are exact by
 default:
 
+Example `~/.cchour/excludes.json`:
+
+```json
+{
+  "projects": [
+    "my-private-repo",
+    "tmp-*"
+  ],
+  "paths": [
+    "~/work/ai/private-repo",
+    "~/work/ai/private-repo/*",
+    "/Users/{user-name}/work/noisy-folder/*"
+  ]
+}
+```
+
 | Entry | Meaning |
 |---|---|
-| `/Users/dengwei` | Exclude only sessions recorded at exactly `/Users/dengwei` |
-| `/Users/dengwei/*` | Exclude sessions under `/Users/dengwei/`, including repos/folders below it |
-| `/Users/dengwei/work/ai/github` | Exclude only that exact folder |
-| `/Users/dengwei/work/ai/github/*` | Exclude repos/folders under that folder |
+| `~` | Exclude only sessions recorded at exactly your home directory |
+| `~/*` | Exclude sessions under your home directory, including repos/folders below it |
+| `/Users/{user-name}/work/ai/github` | Exclude only that exact folder |
+| `/Users/{user-name}/work/ai/github/*` | Exclude repos/folders under that folder |
 | `tmp-*` as a project exclude | Exclude projects whose report name starts with `tmp-` |
 
-Quote wildcard arguments in the shell, e.g. `'/Users/dengwei/*'`, so they are
+Quote wildcard arguments in the shell, e.g. `'~/work/ai/private-repo/*'`, so they are
 saved as patterns instead of being expanded by your shell before `cchour` sees
 them.
 
 Agent task details use the same excludes. If a task's spec, goal, result, user
 text, or assistant text mentions an excluded path pattern such as
-`/Users/dengwei/work/no7dw/*`, the whole task detail row is hidden from the HTML
-and JSON report.
+`~/work/ai/private-repo/*`, the whole task detail row is hidden from the HTML and
+JSON report.
 
 ### Report language
 
