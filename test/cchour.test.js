@@ -138,6 +138,76 @@ test('workflow summary ignores pasted Spec Goal Result labels from ordinary chat
   assert.equal(rows.length, 0);
 });
 
+test('workflow summary treats generated plan markdown files as spec evidence', () => {
+  const firstTs = new Date(2026, 5, 23, 21, 0).getTime() / 1000;
+  const summary = cchour.extractTaskSummary({
+    userTexts: ['please plan the nightly report work'],
+    assistantTexts: ['Generated docs/superpowers/plans/2026-06-24-nightly-agent-report.md and will implement from that plan.'],
+  });
+  const rows = cchour.buildTaskRowsForReport([{
+    id: 'generated-plan',
+    tool: 'Codex',
+    project: 'cchour',
+    category: 'Product',
+    firstTs,
+    lastTs: firstTs + 120,
+    timestamps: [firstTs, firstTs + 120],
+    tokens: { available: true, total: 123, input: 100, cachedInput: 0, output: 23, reasoningOutput: 0 },
+    userTexts: ['please plan the nightly report work'],
+    assistantTexts: ['Generated docs/superpowers/plans/2026-06-24-nightly-agent-report.md and will implement from that plan.'],
+    ...summary,
+  }], -Infinity, Infinity);
+
+  assert.equal(summary.spec, 'docs/superpowers/plans/2026-06-24-nightly-agent-report.md');
+  assert.equal(summary.agentWorkflow, true);
+  assert.equal(rows.length, 1);
+});
+
+test('workflow summary treats generated Chinese plan markdown files as spec evidence', () => {
+  const summary = cchour.extractTaskSummary({
+    userTexts: ['先生成计划'],
+    assistantTexts: ['已生成 docs/阶段一实施计划.md，后续按这个计划执行。'],
+  });
+
+  assert.equal(summary.spec, 'docs/阶段一实施计划.md');
+  assert.equal(summary.agentWorkflow, true);
+});
+
+test('workflow summary ignores wildcard plan filename descriptions', () => {
+  const summary = cchour.extractTaskSummary({
+    userTexts: ['spec also means usually generated *plan*.md *计划*.md'],
+    assistantTexts: ['I will improve it.'],
+  });
+
+  assert.equal(summary.spec, 'unknown');
+  assert.equal(summary.agentWorkflow, false);
+});
+
+test('workflow summary does not treat referenced plan files as generated specs', () => {
+  const firstTs = new Date(2026, 5, 23, 21, 0).getTime() / 1000;
+  const summary = cchour.extractTaskSummary({
+    userTexts: ['implement the docs/merge-plan.md and then use docs/benchmark-plan.md'],
+    assistantTexts: ['I will inspect the plan and implement it.'],
+  });
+  const rows = cchour.buildTaskRowsForReport([{
+    id: 'referenced-plan',
+    tool: 'Codex',
+    project: 'finclaw',
+    category: 'Product',
+    firstTs,
+    lastTs: firstTs + 120,
+    timestamps: [firstTs, firstTs + 120],
+    tokens: { available: true, total: 123, input: 100, cachedInput: 0, output: 23, reasoningOutput: 0 },
+    userTexts: ['implement the docs/merge-plan.md and then use docs/benchmark-plan.md'],
+    assistantTexts: ['I will inspect the plan and implement it.'],
+    ...summary,
+  }], -Infinity, Infinity);
+
+  assert.equal(summary.spec, 'unknown');
+  assert.equal(summary.agentWorkflow, false);
+  assert.equal(rows.length, 0);
+});
+
 test('workflow summary keeps explicit generated goals as separate rows', () => {
   const firstTs = new Date(2026, 5, 23, 21, 0).getTime() / 1000;
   const rows = cchour.buildTaskRowsForReport([

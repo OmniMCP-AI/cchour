@@ -141,6 +141,12 @@ result, user text, or assistant text mentions an excluded path pattern such as
 `~/work/ai/private-repo/*`, the whole summary row is hidden from the HTML and
 JSON report.
 
+For local workflow summaries, `Spec` means explicit spec-programming evidence:
+`/spec ...` commands or generated plan artifacts such as `docs/feature-plan.md`
+or `docs/阶段一实施计划.md`. Merely referencing a plan file, for example "use
+docs/feature-plan.md", does not create a spec row unless the log indicates the
+agent generated, created, wrote, saved, or updated that plan.
+
 ### Report language
 
 Use `--lang en` or `--lang cn` to choose the generated HTML UI language and CLI

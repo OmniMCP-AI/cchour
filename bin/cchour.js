@@ -818,7 +818,25 @@ function extractWorkflowCommandGoal(text) {
 function extractWorkflowCommandSpec(text) {
   const body = String(text || '');
   const m = body.match(/(?:^|\r?\n)\s*\/spec\s+([^\r\n]{4,360})/i);
-  return m ? clipText(m[1], 320) : '';
+  if (m) return clipText(m[1], 320);
+  return extractGeneratedPlanSpec(body);
+}
+
+function extractGeneratedPlanSpec(text) {
+  const body = String(text || '');
+  const generated = /(?:generated|created|wrote|saved|added|produced|drafted|updated|生成|创建|写入|保存|新增|产出|起草|更新)/i;
+  const fileRe = /[^\s`"'<>，。；、]+(?:plan|计划)[^\s`"'<>，。；、]*\.md/giu;
+  const files = [];
+  let m;
+  while ((m = fileRe.exec(body))) {
+    const before = body.slice(Math.max(0, m.index - 80), m.index);
+    if (!generated.test(before)) continue;
+    const file = m[0].replace(/[),.;:!?，。；：！？]+$/u, '');
+    if (file.includes('*')) continue;
+    if (!files.includes(file)) files.push(file);
+    if (files.length >= 3) break;
+  }
+  return files.length ? clipText(files.join(', '), 320) : '';
 }
 
 function extractTaskSummary(session) {
